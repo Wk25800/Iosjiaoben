@@ -24,7 +24,7 @@ cron:
 
 script-providers:
   "PingMe_5":
-    url: https:https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/Pingme.js.stoverride
+    url: https:https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/Pingme.js
     interval: 86400
 
 (function() {
