@@ -1,17 +1,28 @@
+name: |-
+  PingMe
+desc: |-
+  PingMe
+icon: |-
+  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1086.png
+
+http:
+
+  mitm:
+    - "api.pingmeapp.net"
+
+  script:
+    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+      name: "PingMe_5"
+      type: request
+      timeout: 60
+
+cron:
+  script:
+    - name: "PingMe_5"
+      cron: 30 8,20 * * *
+      timeout: 120
+
 script-providers:
-  PingMe:
-    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/Pingme.js
+  "PingMe_5":
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
     interval: 86400
-
-http-request:
-  - match: ^https://api\.pingmeapp\.net/app/queryBalanceAndBonus
-    script: PingMe
-
-tasks:
-  - name: PingMe签到
-    cron: "30 8,20 * * *"
-    script: PingMe
-    timeout: 30
-
-mitm:
-  - api.pingmeapp.net
