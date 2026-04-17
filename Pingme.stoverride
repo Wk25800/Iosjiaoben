@@ -1,17 +1,16 @@
-http-request:
-  - match: https://api.pingmeapp.net/app/queryBalanceAndBonus
-    script: PingMe
-
 script-providers:
   PingMe:
-    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/Pingme.js
     interval: 86400
-    interval: 86400
+
+http-request:
+  - match: ^https://api\.pingmeapp\.net/app/queryBalanceAndBonus
+    script: PingMe
 
 tasks:
   - name: PingMe签到
-    script: PingMe
     cron: "30 8,20 * * *"
+    script: PingMe
     timeout: 30
 
 mitm:
