@@ -4,7 +4,8 @@ http-request:
 
 script-providers:
   PingMe:
-    url: https://raw.githubusercontent.com/ZenmoFeiShi/Qx/refs/heads/main/PingMe_Stash.js
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe_Stash.js
+    interval: 86400
     interval: 86400
 
 tasks:
