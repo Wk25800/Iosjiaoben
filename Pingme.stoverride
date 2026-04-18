@@ -7,20 +7,20 @@ mitm:
 
 script:
   - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
-    name: "PingMe获取Cookie"
+    name: "PingMe_Request"
     type: request
     requires-body: false
     timeout: 10
 
 cron:
-  - name: "PingMe_签到任务"
+  - name: "PingMe_Cron"
     cron: "30 8,20 * * *"
     timeout: 120
 
 script-providers:
-  "PingMe获取Cookie":
+  "PingMe_Request":
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
     interval: 86400
-  "PingMe_签到任务":
+  "PingMe_Cron":
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
     interval: 86400
