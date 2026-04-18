@@ -1,28 +1,20 @@
-name: |-
-  PingMe
-desc: |-
-  PingMe
-icon: |-
-  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1086.png
+name: PingMe
+desc: PingMe
+icon: https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1086.png
 
-http:
+mitm:
+  - api.pingmeapp.net
 
-  mitm:
-    - "api.pingmeapp.net"
-
-  script:
-    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
-      name: "PingMe_5"
-      type: request
-      timeout: 60
+script:
+  - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+    type: request
+    requires-body: false
+    timeout: 10
+    script: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
+    tag: PingMe获取Cookie
 
 cron:
-  script:
-    - name: "PingMe_5"
-      cron: 30 8,20 * * *
-      timeout: 120
-
-script-providers:
-  "PingMe_5":
-    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
-    interval: 86400
+  - name: PingMe_5
+    cron: "30 8,20 * * *"
+    timeout: 120
+    script: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
