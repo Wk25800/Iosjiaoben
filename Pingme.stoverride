@@ -1,26 +1,26 @@
-# 模块基础信息
 name: PingMe
 desc: PingMe 自动签到
 icon: https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1086.png
 
-# MITM 配置（必须，否则脚本无法捕获请求）
 mitm:
-  enabled: true
-  hosts:
-    - api.pingmeapp.net
+  - api.pingmeapp.net:443
 
-# 1. 请求脚本（捕获 Cookie）
 script:
   - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+    name: "PingMe获取Cookie"
     type: request
     requires-body: false
     timeout: 10
-    script-path: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
-    tag: PingMe获取Cookie
 
-# 2. 定时执行脚本（自动签到）
 cron:
-  - name: PingMe_签到任务
+  - name: "PingMe_签到任务"
     cron: "30 8,20 * * *"
     timeout: 120
-    script-path: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
+
+script-providers:
+  "PingMe获取Cookie":
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
+    interval: 86400
+  "PingMe_签到任务":
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
+    interval: 86400
