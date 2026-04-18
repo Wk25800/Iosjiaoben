@@ -4,7 +4,7 @@ http:
   mitm:
     - "api.pingmeapp.net"
   script:
-    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+    - match: ^https:\/\/api\.pingmeapp\.net\/
       name: PingMe_Script
       type: request
       require-body: false
