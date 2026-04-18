@@ -1,21 +1,19 @@
-http-request:
-  - match: https://api.pingmeapp.net/app/queryBalanceAndBonus
-    script: PingMe
-
+name: PingMe
+desc: PingMe自动签到
+http:
+  mitm:
+    - "api.pingmeapp.net"
+  script:
+    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+      name: PingMe_Script
+      type: request
+      require-body: false
+      timeout: 10
 script-providers:
-  PingMe:
+  PingMe_Script:
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/main/PingMe.js
     interval: 86400
-    interval: 86400
 
-tasks:
-  - name: PingMe签到
-    script: PingMe
-    cron: "30 8,20 * * *"
-    timeout: 30
-
-mitm:
-  - api.pingmeapp.net
 
 const scriptName = 'PingMe';
 const ckKey = 'pingme_capture_v3';
