@@ -1,14 +1,3 @@
-#!name=WeTalk
-#!desc=自动抓包+每日签到
-#!module-type=generic
-
-[Script]
-WeTalk_Capture = type=http-request,pattern=^https://api\.wetalkapp\.com/app/queryBalanceAndBonus,script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js,requires-body=0
-WeTalk_Task = type=cron,cronexp="20 8,20 * * *",script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js
-
-[MITM]
-hostname = %APPEND% api.wetalkapp.com
-
 const scriptName = 'WeTalk';
 const storeKey = 'wetalk_accounts_v1';
 const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
@@ -36,10 +25,22 @@ function MD5(string) {
   function G(x, y, z) { return (x & z) | (y & (~z)); }
   function H(x, y, z) { return x ^ y ^ z; }
   function I(x, y, z) { return y ^ (x | (~z)); }
-  function FF(a, b, c, d, x, s, ac) { a = AddUnsigned(a, AddUnsigned(AddUnsigned(F(b, c, d), x), ac)); return AddUnsigned(RotateLeft(a, s), b); }
-  function GG(a, b, c, d, x, s, ac) { a = AddUnsigned(a, AddUnsigned(AddUnsigned(G(b, c, d), x), ac)); return AddUnsigned(RotateLeft(a, s), b); }
-  function HH(a, b, c, d, x, s, ac) { a = AddUnsigned(a, AddUnsigned(AddUnsigned(H(b, c, d), x), ac)); return AddUnsigned(RotateLeft(a, s), b); }
-  function II(a, b, c, d, x, s, ac) { a = AddUnsigned(a, AddUnsigned(AddUnsigned(I(b, c, d), x), ac)); return AddUnsigned(RotateLeft(a, s), b); }
+  function FF(a, b, c, d, x, s, ac) {
+    a = AddUnsigned(a, AddUnsigned(AddUnsigned(F(b, c, d), x), ac));
+    return AddUnsigned(RotateLeft(a, s), b);
+  }
+  function GG(a, b, c, d, x, s, ac) {
+    a = AddUnsigned(a, AddUnsigned(AddUnsigned(G(b, c, d), x), ac));
+    return AddUnsigned(RotateLeft(a, s), b);
+  }
+  function HH(a, b, c, d, x, s, ac) {
+    a = AddUnsigned(a, AddUnsigned(AddUnsigned(H(b, c, d), x), ac));
+    return AddUnsigned(RotateLeft(a, s), b);
+  }
+  function II(a, b, c, d, x, s, ac) {
+    a = AddUnsigned(a, AddUnsigned(AddUnsigned(I(b, c, d), x), ac));
+    return AddUnsigned(RotateLeft(a, s), b);
+  }
   function ConvertToWordArray(str) {
     const lMessageLength = str.length;
     const lNumberOfWords_temp1 = lMessageLength + 8;
@@ -122,7 +123,7 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
-// ===== Surge 存储兼容 =====
+// ========== Surge 存储 API ==========
 function loadStore() {
   const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 1, accounts: {}, order: [] };
@@ -135,6 +136,7 @@ function loadStore() {
     return { version: 1, accounts: {}, order: [] };
   }
 }
+
 function saveStore(store) {
   $persistentStore.write(JSON.stringify(store), storeKey);
 }
@@ -159,7 +161,7 @@ function buildUA(baseUA, seed) {
     if (/Darwin\/[\d.]+/.test(ua)) { ua = ua.replace(/Darwin\/[\d.]+/, `Darwin/${darwin}`); changed = true; }
     if (changed) return ua;
   }
-  return `WeTalk/30.6.0 (com.innovationworks.wetalk; build:28; iOS ${iosVer}) Alamofire/5.4.3`;
+  return `WeTalk/30.6.0 (com.innovation.wetalk; build:2; iOS ${iosVer}) Alamofire/5.4.3`;
 }
 
 function buildSignedParamsRaw(capture) {
@@ -182,16 +184,22 @@ function buildUrl(path, capture) {
 function buildHeaders(capture, ua) {
   const headers = {};
   Object.keys(capture.headers || {}).forEach(k => headers[k] = capture.headers[k]);
-  delete headers['Content-Length']; delete headers['content-length'];
-  delete headers[':authority']; delete headers[':method']; delete headers[':path']; delete headers[':scheme'];
+  delete headers['Content-Length'];
+  delete headers['content-length'];
+  delete headers[':authority'];
+  delete headers[':method'];
+  delete headers[':path'];
+  delete headers[':scheme'];
   headers['Host'] = API_HOST;
   headers['Accept'] = headers['Accept'] || 'application/json';
-  Object.keys(headers).forEach(k => { if (k.toLowerCase() === 'user-agent') delete headers[k]; });
+  Object.keys(headers).forEach(k => {
+    if (k.toLowerCase() === 'user-agent') delete headers[k];
+  });
   headers['User-Agent'] = ua;
   return headers;
 }
 
-// ===== Surge 通知兼容 =====
+// ========== Surge 通知 ==========
 function notify(title, body) {
   $notification.post(scriptName, title, body);
 }
@@ -200,131 +208,128 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// ===== Surge 网络请求兼容 =====
+// ========== Surge 网络请求 ==========
+function fetchApi(url, headers) {
+  return new Promise((resolve, reject) => {
+    $httpClient.get({ url, headers }, (err, res, body) => {
+      if (err) return reject(err);
+      resolve({ status: res.status, body });
+    });
+  });
+}
+
 function runAccount(acc, index, total) {
   const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
   const ua = buildUA(acc.baseUA, acc.uaSeed);
   const headers = buildHeaders(acc.capture, ua);
   const msgs = [tag];
 
-  const fetchApi = (path) => {
-    const url = buildUrl(path, acc.capture);
-    return new Promise((resolve, reject) => {
-      $httpClient.get({ url, headers }, (err, res, body) => {
-        if (err) return reject(err);
-        resolve({ status: res.status, body });
-      });
-    });
-  };
-
-  function doVideoLoop(count) {
+  const doVideoLoop = (count) => {
     let i = 0;
     function next() {
       if (i >= count) return Promise.resolve();
       return new Promise(resolve => {
         setTimeout(() => {
           i++;
-          fetchApi('videoBonus').then(res => {
+          const url = buildUrl('videoAdReward', acc.capture);
+          fetchApi(url, headers).then(res => {
             try {
               const d = JSON.parse(res.body);
               if (d.retcode === 0) {
-                msgs.push(`🎬 视频${i}：+${d.result?.bonus || '?'} Coins`);
-                resolve(next());
+                msgs.push(`视频${i} ✅`);
               } else {
-                msgs.push(`⏸ 视频${i}：${d.retmsg}`);
-                resolve();
+                msgs.push(`视频${i} ℹ️`);
               }
             } catch (e) {
-              msgs.push(`❌ 视频${i}：解析失败`);
-              resolve();
+              msgs.push(`视频${i} ❌`);
             }
+            resolve(next());
           }).catch(err => {
-            msgs.push(`❌ 视频${i}：${err || '请求失败'}`);
-            resolve();
+            msgs.push(`视频${i} ❌`);
+            resolve(next());
           });
-        }, i === 0 ? 1500 : VIDEO_DELAY);
+        }, VIDEO_DELAY);
       });
     }
     return next();
-  }
+  };
 
-  return fetchApi('queryBalanceAndBonus').then(res => {
-    try {
-      const d = JSON.parse(res.body);
-      if (d.retcode === 0) msgs.push(`💰 余额：${d.result.balance} Coins`);
-      else msgs.push(`⚠️ 查询：${d.retmsg}`);
-    } catch (e) { msgs.push('❌ 查询：解析失败'); }
-    return fetchApi('checkIn');
-  }).then(res => {
-    try {
-      const d = JSON.parse(res.body);
-      if (d.retcode === 0) msgs.push(`✅ 签到：${(d.result?.bonusHint || d.retmsg || '').replace(/\n/g, ' ')}`);
-      else msgs.push(`⚠️ 签到：${d.retmsg}`);
-    } catch (e) { msgs.push('❌ 签到：解析失败'); }
-    return doVideoLoop(MAX_VIDEO);
-  }).then(() => fetchApi('queryBalanceAndBonus')).then(res => {
-    try {
-      const d = JSON.parse(res.body);
-      if (d.retcode === 0) msgs.push(`💰 最新余额：${d.result.balance} Coins`);
-    } catch (e) {}
-    return msgs.join('\n');
-  }).catch(err => {
-    msgs.push(`❌ 异常：${err || String(err)}`);
-    return msgs.join('\n');
-  });
+  return fetchApi(buildUrl('queryBalanceAndBonus', acc.capture), headers)
+    .then(res => {
+      try {
+        const d = JSON.parse(res.body);
+        if (d.retcode === 0) {
+          msgs.push(`余额: ${d.result?.balance ?? '?'}`);
+        }
+      } catch (e) {}
+      return fetchApi(buildUrl('checkIn', acc.capture), headers);
+    })
+    .then(res => {
+      try {
+        const d = JSON.parse(res.body);
+        if (d.retcode === 0) msgs.push("签到 ✅");
+        else msgs.push("签到 ℹ️");
+      } catch (e) {
+        msgs.push("签到 ❌");
+      }
+      return doVideoLoop(MAX_VIDEO);
+    })
+    .then(() => msgs.join(' '));
 }
 
-// ===== 入口逻辑（抓包 / 定时）=====
-if (typeof $request !== 'undefined' && $request) {
-  const paramsRaw = parseRawQuery($request.url);
-  const headersMap = $request.headers || {};
-  let baseUA = '';
-  Object.keys(headersMap).forEach(k => {
-    if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
-  });
+// ========== 入口 ==========
+if (typeof $request !== "undefined" && $request) {
+  try {
+    const paramsRaw = parseRawQuery($request.url);
+    const headersMap = $request.headers || {};
+    let baseUA = '';
+    Object.keys(headersMap).forEach(k => {
+      if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
+    });
 
-  const store = loadStore();
-  const fp = fingerprintOf(paramsRaw);
-  const now = Date.now();
-  const existed = !!store.accounts[fp];
-  const uaSeed = existed ? store.accounts[fp].uaSeed : store.order.length;
-  const alias = existed ? store.accounts[fp].alias : `账号${store.order.length + 1}`;
+    const store = loadStore();
+    const fp = fingerprintOf(paramsRaw);
+    const now = Date.now();
+    const existed = !!store.accounts[fp];
+    const uaSeed = existed ? store.accounts[fp].uaSeed : store.order.length;
+    const alias = existed ? store.accounts[fp].alias : `账号${store.order.length + 1}`;
 
-  store.accounts[fp] = {
-    id: fp,
-    alias,
-    uaSeed,
-    baseUA,
-    capture: { url: $request.url, paramsRaw, headers: headersMap },
-    createdAt: existed ? store.accounts[fp].createdAt : now,
-    updatedAt: now
-  };
-  if (!existed) store.order.push(fp);
-  saveStore(store);
+    store.accounts[fp] = {
+      id: fp,
+      alias,
+      uaSeed,
+      baseUA,
+      capture: { url: $request.url, paramsRaw, headers: headersMap },
+      createdAt: existed ? store.accounts[fp].createdAt : now,
+      updatedAt: now
+    };
+    if (!existed) store.order.push(fp);
+    saveStore(store);
 
-  const total = store.order.length;
-  notify(existed ? '🔄 账号已更新' : '✅ 新账号已入库', `${alias}\n账号总数：${total}`);
+    notify(existed ? "更新账号 ✅" : "新增账号 ✅", `${alias}`);
+  } catch (e) {}
   $done({});
 } else {
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
-    notify('⚠️ 未抓到账号', '请打开 WeTalk 进入收益页触发抓包');
+    notify("未检测到账号", "请打开APP收益页");
     $done();
   } else {
     const total = ids.length;
     const results = [];
     let chain = Promise.resolve();
     ids.forEach((id, idx) => {
-      chain = chain.then(() => runAccount(store.accounts[id], idx, total))
-        .then(text => results.push(text))
+      chain = chain
+        .then(() => runAccount(store.accounts[id], idx, total))
+        .then(txt => results.push(txt))
         .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
     });
     chain.then(() => {
-      notify(`🎉 签到完成(${total}个账号)`, results.join('\n———\n'));
+      notify(`完成 ${total} 个账号`, results.join("\n"));
       $done();
     }).catch(err => {
-      notify('❌ 任务异常', err + '');
+      notify("任务异常", "");
       $done();
     });
   }
