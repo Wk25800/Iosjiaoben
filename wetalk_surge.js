@@ -1,3 +1,14 @@
+#!name=WeTalk
+#!desc=自动抓包+每日签到
+#!module-type=generic
+
+[Script]
+WeTalk_Capture = type=http-request,pattern=^https://api\.wetalkapp\.com/app/queryBalanceAndBonus,script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js,requires-body=0
+WeTalk_Task = type=cron,cronexp="20 8,20 * * *",script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js
+
+[MITM]
+hostname = %APPEND% api.wetalkapp.com
+
 const scriptName = 'WeTalk';
 const storeKey = 'wetalk_accounts_v1';
 const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
