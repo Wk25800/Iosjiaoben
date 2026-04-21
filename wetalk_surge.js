@@ -1,4 +1,4 @@
-// WeTalk 自动化签到+视频奖励 Surge 最终修复版
+// WeTalk 签到 - Surge 强制抓包版
 const scriptName = 'WeTalk';
 const storeKey = 'wetalk_accounts_v1';
 const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
@@ -90,12 +90,6 @@ function getUTCSignDate() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   return `${now.getUTCFullYear()}-${pad(now.getUTCMonth()+1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
-}
-
-function normalizeHeaderNameMap(headers) {
-  const out = {};
-  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
-  return out;
 }
 
 function parseRawQuery(url) {
@@ -275,10 +269,12 @@ function runAccount(acc, index, total) {
   });
 }
 
-// 只对你截图里的 queryBalanceAndBonus 接口触发保存，避免其他接口干扰
-if (typeof $request !== 'undefined' && $request.url.includes('/app/queryBalanceAndBonus')) {
+// --------------- 关键修改：无判断，强制执行保存逻辑 ---------------
+// 只要脚本被触发，就直接保存账号、弹通知，不做任何环境判断
+if (typeof $request !== 'undefined') {
   const paramsRaw = parseRawQuery($request.url);
-  const headersMap = normalizeHeaderNameMap($request.headers || {});
+  const headersMap = {};
+  Object.keys($request.headers || {}).forEach(k => headersMap[k] = $request.headers[k]);
   let baseUA = '';
   Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
 
@@ -305,7 +301,8 @@ if (typeof $request !== 'undefined' && $request.url.includes('/app/queryBalanceA
   notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
   console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}`);
   $done({});
-} else if (typeof $request === 'undefined') {
+} else {
+  // 定时任务模式
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
@@ -328,6 +325,4 @@ if (typeof $request !== 'undefined' && $request.url.includes('/app/queryBalanceA
       $done();
     });
   }
-} else {
-  $done({});
 }
