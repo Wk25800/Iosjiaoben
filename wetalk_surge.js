@@ -1,205 +1,3 @@
-
-const _scriptSonverterCompatibilityType = typeof $response !== 'undefined' ? 'response' : typeof $request !== 'undefined' ? 'request' : ''
-const _scriptSonverterCompatibilityDone = $done
-try {
-  
-// 转换时间: 2026/4/21 15:05:55
-// 兼容性转换
-if (typeof $request !== 'undefined') {
-  const lowerCaseRequestHeaders = Object.fromEntries(
-    Object.entries($request.headers).map(([k, v]) => [k.toLowerCase(), v])
-  );
-
-  $request.headers = new Proxy(lowerCaseRequestHeaders, {
-    get: function (target, propKey, receiver) {
-      return Reflect.get(target, propKey.toLowerCase(), receiver);
-    },
-    set: function (target, propKey, value, receiver) {
-      return Reflect.set(target, propKey.toLowerCase(), value, receiver);
-    },
-  });
-}
-if (typeof $response !== 'undefined') {
-  const lowerCaseResponseHeaders = Object.fromEntries(
-    Object.entries($response.headers).map(([k, v]) => [k.toLowerCase(), v])
-  );
-
-  $response.headers = new Proxy(lowerCaseResponseHeaders, {
-    get: function (target, propKey, receiver) {
-      return Reflect.get(target, propKey.toLowerCase(), receiver);
-    },
-    set: function (target, propKey, value, receiver) {
-      return Reflect.set(target, propKey.toLowerCase(), value, receiver);
-    },
-  });
-}
-Object.getOwnPropertyNames($httpClient).forEach(method => {
-  if(typeof $httpClient[method] === 'function') {
-    $httpClient[method] = new Proxy($httpClient[method], {
-      apply: (target, ctx, args) => {
-        for (let field in args?.[0]?.headers) {
-          if (['host'].includes(field.toLowerCase())) {
-            delete args[0].headers[field];
-          } else if (['number'].includes(typeof args[0].headers[field])) {
-            args[0].headers[field] = args[0].headers[field].toString();
-          }
-        }
-        return Reflect.apply(target, ctx, args);
-      }
-    });
-  }
-})
-
-
-// QX 相关
-var setInterval = () => {}
-var clearInterval = () => {}
-var $task = {
-  fetch: url => {
-    return new Promise((resolve, reject) => {
-      if (url.method == 'POST') {
-        $httpClient.post(url, (error, response, data) => {
-          if (response) {
-            response.body = data
-            resolve(response, {
-              error: error,
-            })
-          } else {
-            resolve(null, {
-              error: error,
-            })
-          }
-        })
-      } else {
-        $httpClient.get(url, (error, response, data) => {
-          if (response) {
-            response.body = data
-            resolve(response, {
-              error: error,
-            })
-          } else {
-            resolve(null, {
-              error: error,
-            })
-          }
-        })
-      }
-    })
-  },
-}
-
-var $prefs = {
-  removeValueForKey: key => {
-    let result
-    try {
-      result = $persistentStore.write('', key)
-    } catch (e) {
-    }
-    if ($persistentStore.read(key) == null) return result
-    try {
-      result = $persistentStore.write(null, key)
-    } catch (e) {
-    }
-    if ($persistentStore.read(key) == null) return result
-    const err = '无法模拟 removeValueForKey 删除 key: ' + key
-    console.log(err)
-    $notification.post('Script Hub: 脚本转换', '❌ WeTalk.js', err)
-    return result
-  },
-  valueForKey: key => {
-    return $persistentStore.read(key)
-  },
-  setValueForKey: (val, key) => {
-    return $persistentStore.write(val, key)
-  },
-}
-
-var $notify = (title = '', subt = '', desc = '', opts) => {
-  const toEnvOpts = (rawopts) => {
-    if (!rawopts) return rawopts 
-    if (typeof rawopts === 'string') {
-      if ('undefined' !== typeof $loon) return rawopts
-      else if('undefined' !== typeof $rocket) return rawopts
-      else return { url: rawopts }
-    } else if (typeof rawopts === 'object') {
-      if ('undefined' !== typeof $loon) {
-        let openUrl = rawopts.openUrl || rawopts.url || rawopts['open-url']
-        let mediaUrl = rawopts.mediaUrl || rawopts['media-url']
-        return { openUrl, mediaUrl }
-      } else {
-        let openUrl = rawopts.url || rawopts.openUrl || rawopts['open-url']
-        if('undefined' !== typeof $rocket) return openUrl
-        return { url: openUrl }
-      }
-    } else {
-      return undefined
-    }
-  }
-  console.log(title, subt, desc, toEnvOpts(opts))
-  $notification.post(title, subt, desc, toEnvOpts(opts))
-}
-var _scriptSonverterOriginalDone = $done
-var _scriptSonverterDone = (val = {}) => {
-  let result
-  if (
-    (typeof $request !== 'undefined' &&
-    typeof val === 'object' &&
-    typeof val.status !== 'undefined' &&
-    typeof val.headers !== 'undefined' &&
-    typeof val.body !== 'undefined') || false
-  ) {
-    try {
-      for (const part of val?.status?.split(' ')) {
-        const statusCode = parseInt(part, 10)
-        if (!isNaN(statusCode)) {
-          val.status = statusCode
-          break
-        }
-      }
-    } catch (e) {}
-    if (!val.status) {
-      val.status = 200
-    }
-    if (!val.headers) {
-      val.headers = {
-        'Content-Type': 'text/plain; charset=UTF-8',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST,GET,OPTIONS,PUT,DELETE',
-        'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept',
-      }
-    }
-    result = { response: val }
-  } else {
-    result = val
-  }
-  console.log('$done')
-  try {
-    console.log(JSON.stringify(result))
-  } catch (e) {
-    console.log(result)
-  }
-  _scriptSonverterOriginalDone(result)
-}
-var window = globalThis
-window.$done = _scriptSonverterDone
-var global = globalThis
-global.$done = _scriptSonverterDone
-
-//2026/04/21
-/*
-@Name：WeTalk 自动化签到+视频奖励
-@Author：TG@ZenMoFiShi
-
-[rewrite_local]
-^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus url script-request-header https://raw.githubusercontent.com/ZenmoFeiShi/Qx/refs/heads/main/WeTalk.js
-
-[task_local]
-20 8,20 * * * https://raw.githubusercontent.com/ZenmoFeiShi/Qx/refs/heads/main/WeTalk.js, tag=WeTalk签到, enabled=true
-
-[MITM]
-hostname = api.wetalkapp.com
-*/
-
 const scriptName = 'WeTalk';
 const storeKey = 'wetalk_accounts_v1';
 const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
@@ -293,12 +91,6 @@ function getUTCSignDate() {
   return `${now.getUTCFullYear()}-${pad(now.getUTCMonth()+1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
 }
 
-function normalizeHeaderNameMap(headers) {
-  const out = {};
-  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
-  return out;
-}
-
 function parseRawQuery(url) {
   const query = (url.split('?')[1] || '').split('#')[0];
   const rawMap = {};
@@ -319,8 +111,9 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
+// ===== Surge 存储兼容 =====
 function loadStore() {
-  const raw = $prefs.valueForKey(storeKey);
+  const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 1, accounts: {}, order: [] };
   try {
     const obj = JSON.parse(raw);
@@ -331,9 +124,8 @@ function loadStore() {
     return { version: 1, accounts: {}, order: [] };
   }
 }
-
 function saveStore(store) {
-  $prefs.setValueForKey(JSON.stringify(store), storeKey);
+  $persistentStore.write(JSON.stringify(store), storeKey);
 }
 
 function pickItem(arr, seed) {
@@ -376,14 +168,9 @@ function buildUrl(path, capture) {
   return `https://${API_HOST}/app/${path}?${qs}`;
 }
 
-function cloneHeaders(headers) {
-  const out = {};
-  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
-  return out;
-}
-
 function buildHeaders(capture, ua) {
-  const headers = cloneHeaders(capture.headers || {});
+  const headers = {};
+  Object.keys(capture.headers || {}).forEach(k => headers[k] = capture.headers[k]);
   delete headers['Content-Length']; delete headers['content-length'];
   delete headers[':authority']; delete headers[':method']; delete headers[':path']; delete headers[':scheme'];
   headers['Host'] = API_HOST;
@@ -393,23 +180,31 @@ function buildHeaders(capture, ua) {
   return headers;
 }
 
+// ===== Surge 通知兼容 =====
 function notify(title, body) {
-  $notify(scriptName, title, body);
+  $notification.post(scriptName, title, body);
 }
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// ===== Surge 网络请求兼容 =====
 function runAccount(acc, index, total) {
   const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
   const ua = buildUA(acc.baseUA, acc.uaSeed);
   const headers = buildHeaders(acc.capture, ua);
   const msgs = [tag];
 
-  function fetchApi(path) {
-    return $task.fetch({ url: buildUrl(path, acc.capture), method: 'GET', headers });
-  }
+  const fetchApi = (path) => {
+    const url = buildUrl(path, acc.capture);
+    return new Promise((resolve, reject) => {
+      $httpClient.get({ url, headers }, (err, res, body) => {
+        if (err) return reject(err);
+        resolve({ status: res.status, body });
+      });
+    });
+  };
 
   function doVideoLoop(count) {
     let i = 0;
@@ -433,7 +228,7 @@ function runAccount(acc, index, total) {
               resolve();
             }
           }).catch(err => {
-            msgs.push(`❌ 视频${i}：${err.error || '请求失败'}`);
+            msgs.push(`❌ 视频${i}：${err || '请求失败'}`);
             resolve();
           });
         }, i === 0 ? 1500 : VIDEO_DELAY);
@@ -463,16 +258,19 @@ function runAccount(acc, index, total) {
     } catch (e) {}
     return msgs.join('\n');
   }).catch(err => {
-    msgs.push(`❌ 异常：${err.error || String(err)}`);
+    msgs.push(`❌ 异常：${err || String(err)}`);
     return msgs.join('\n');
   });
 }
 
+// ===== 入口逻辑（抓包 / 定时）=====
 if (typeof $request !== 'undefined' && $request) {
   const paramsRaw = parseRawQuery($request.url);
-  const headersMap = normalizeHeaderNameMap($request.headers || {});
+  const headersMap = $request.headers || {};
   let baseUA = '';
-  Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
+  Object.keys(headersMap).forEach(k => {
+    if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
+  });
 
   const store = loadStore();
   const fp = fingerprintOf(paramsRaw);
@@ -494,45 +292,29 @@ if (typeof $request !== 'undefined' && $request) {
   saveStore(store);
 
   const total = store.order.length;
-  notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
-  console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}\n${JSON.stringify(store.accounts[fp], null, 2)}`);
-  _scriptSonverterDone({});
+  notify(existed ? '🔄 账号已更新' : '✅ 新账号已入库', `${alias}\n账号总数：${total}`);
+  $done({});
 } else {
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
-    notify('⚠️ 未抓到任何账号', '请先打开 WeTalk 触发抓包');
-    _scriptSonverterDone();
+    notify('⚠️ 未抓到账号', '请打开 WeTalk 进入收益页触发抓包');
+    $done();
   } else {
     const total = ids.length;
     const results = [];
     let chain = Promise.resolve();
     ids.forEach((id, idx) => {
       chain = chain.then(() => runAccount(store.accounts[id], idx, total))
-        .then(text => { results.push(text); })
+        .then(text => results.push(text))
         .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
     });
     chain.then(() => {
-      notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
-      _scriptSonverterDone();
+      notify(`🎉 签到完成(${total}个账号)`, results.join('\n———\n'));
+      $done();
     }).catch(err => {
-      notify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
-      _scriptSonverterDone();
+      notify('❌ 任务异常', err + '');
+      $done();
     });
   }
 }
-
-} catch (e) {
-  console.log('❌ Script Hub 兼容层捕获到原脚本未处理的错误')
-  if (_scriptSonverterCompatibilityType) {
-    console.log('⚠️ 故不修改本次' + (_scriptSonverterCompatibilityType === 'response' ? '响应' : '请求'))
-  } else {
-    console.log('⚠️ 因类型非请求或响应, 抛出错误')
-  }
-  console.log(e)
-  if (_scriptSonverterCompatibilityType) {
-    _scriptSonverterCompatibilityDone({})
-  } else {
-    throw e
-  }
-  }
