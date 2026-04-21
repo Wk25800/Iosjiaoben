@@ -1,10 +1,17 @@
-// WeTalk Surge 圈X原版逻辑移植版
-const scriptName = "WeTalk";
-const storeKey = "wetalk_accounts_v1";
-const SECRET = "0fOiukQq7jXZV2GRi9LGlO";
-const API_HOST = "api.wetalkapp.com";
+const scriptName = 'WeTalk';
+const storeKey = 'wetalk_accounts_v1';
+const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
+const API_HOST = 'api.wetalkapp.com';
+const MAX_VIDEO = 5;
+const VIDEO_DELAY = 8000;
+const ACCOUNT_GAP = 3500;
 
-// —————————— 签到用MD5（抓包模式不用）——————————
+const IOS_VERSIONS = ['17.5.1','17.6.1','17.4.1','17.2.1','16.7.8','17.6','17.3.1','18.0.1','17.1.2','16.6.1'];
+const IOS_SCALES = ['2.00','3.00','3.00','2.00','3.00'];
+const IPHONE_MODELS = ['iPhone14,3','iPhone13,3','iPhone15,3','iPhone16,1','iPhone14,7','iPhone13,2','iPhone15,2','iPhone12,1'];
+const CFN_VERS = ['1410.0.3','1494.0.7','1568.100.1','1209.1','1474.0.4','1568.200.2'];
+const DARWIN_VERS = ['22.6.0','23.5.0','23.6.0','24.0.0','22.4.0'];
+
 function MD5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
   function AddUnsigned(lX, lY) {
@@ -84,6 +91,12 @@ function getUTCSignDate() {
   return `${now.getUTCFullYear()}-${pad(now.getUTCMonth()+1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
 }
 
+function normalizeHeaderNameMap(headers) {
+  const out = {};
+  for (let k in headers || {}) out[k] = headers[k];
+  return out;
+}
+
 function parseRawQuery(url) {
   const query = (url.split('?')[1] || '').split('#')[0];
   const rawMap = {};
@@ -98,11 +111,20 @@ function parseRawQuery(url) {
   return rawMap;
 }
 
+function fingerprintOf(paramsRaw) {
+  const drop = { sign:1, signDate:1, timestamp:1, ts:1, nonce:1, random:1, reqTime:1, reqId:1, requestId:1 };
+  const base = Object.keys(paramsRaw || {}).filter(k => !drop[k]).sort().map(k => `${k}=${paramsRaw[k]}`).join('&');
+  return MD5(base).slice(0, 12);
+}
+
 function loadStore() {
+  const raw = $persistentStore.read(storeKey);
+  if (!raw) return { version: 1, accounts: {}, order: [] };
   try {
-    const raw = $persistentStore.read(storeKey);
-    if (!raw) return { version: 1, accounts: {}, order: [] };
-    return JSON.parse(raw);
+    const obj = JSON.parse(raw);
+    if (!obj.accounts) obj.accounts = {};
+    if (!Array.isArray(obj.order)) obj.order = Object.keys(obj.accounts);
+    return obj;
   } catch (e) {
     return { version: 1, accounts: {}, order: [] };
   }
@@ -112,108 +134,199 @@ function saveStore(store) {
   $persistentStore.write(JSON.stringify(store), storeKey);
 }
 
-// —————————— 抓包模式（和圈X原版逻辑完全一致，无MD5，绝不报错）——————————
-if (typeof $request !== 'undefined') {
-  const paramsRaw = parseRawQuery($request.url);
-  if (Object.keys(paramsRaw).length === 0) { $done({}); return; }
-
-  // 直接用uniqueDeviceId作为账号ID，和圈X原版一致，不用MD5
-  const accountId = paramsRaw.uniquedeviceid || paramsRaw.uniqueDeviceId || `acc_${Date.now()}`;
-  const headersMap = {};
-  Object.keys($request.headers || {}).forEach(k => headersMap[k] = $request.headers[k]);
-  let baseUA = '';
-  Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
-
-  const store = loadStore();
-  const existed = !!store.accounts[accountId];
-  if (!store.accounts[accountId]) store.order.push(accountId);
-
-  // 直接保存账号，不做任何多余计算，和圈X原版一致
-  store.accounts[accountId] = {
-    id: accountId,
-    alias: existed ? `账号${store.order.indexOf(accountId)+1}` : `账号${store.order.length}`,
-    ua: baseUA,
-    params: paramsRaw,
-    url: $request.url,
-    headers: headersMap
-  };
-  saveStore(store);
-
-  // 直接弹通知，和圈X原版的“账号参数已更新”完全一样
-  $notification.post("WeTalk", existed ? "🔄 账号参数已更新" : "✅ 新账号已入库", 
-    `${store.accounts[accountId].alias}（id:${accountId.slice(0,12)}）\n当前账号总数：${store.order.length}`);
-  
-  $done({});
+function pickItem(arr, seed) {
+  return arr[seed % arr.length];
 }
 
-// —————————— 定时签到模式（和圈X原版一致，用MD5生成签名）——————————
-else {
-  const store = loadStore();
-  const ids = store.order.filter(id => store.accounts[id]);
-  if (!ids.length) {
-    $notification.post("WeTalk", "⚠️ 未抓到任何账号", "请先打开 WeTalk 触发抓包");
-    $done();
-    return;
+function buildUA(baseUA, seed) {
+  const iosVer = pickItem(IOS_VERSIONS, seed);
+  const scale = pickItem(IOS_SCALES, seed + 1);
+  const model = pickItem(IPHONE_MODELS, seed + 2);
+  const cfn = pickItem(CFN_VERS, seed + 3);
+  const darwin = pickItem(DARWIN_VERS, seed + 4);
+  if (baseUA && typeof baseUA === 'string') {
+    let ua = baseUA;
+    let changed = false;
+    if (/iOS \d+(\.\d+){0,2}/.test(ua)) { ua = ua.replace(/iOS \d+(\.\d+){0,2}/, `iOS ${iosVer}`); changed = true; }
+    if (/Scale\/\d+(\.\d+)?/.test(ua)) { ua = ua.replace(/Scale\/\d+(\.\d+)?/, `Scale/${scale}`); changed = true; }
+    if (/iPhone\d+,\d+/.test(ua)) { ua = ua.replace(/iPhone\d+,\d+/, model); changed = true; }
+    if (/CFNetwork\/[\d.]+/.test(ua)) { ua = ua.replace(/CFNetwork\/[\d.]+/, `CFNetwork/${cfn}`); changed = true; }
+    if (/Darwin\/[\d.]+/.test(ua)) { ua = ua.replace(/Darwin\/[\d.]+/, `Darwin/${darwin}`); changed = true; }
+    if (changed) return ua;
   }
+  return `WeTalk/30.6.0 (com.innovationworks.wetalk; build:28; iOS ${iosVer}) Alamofire/5.4.3`;
+}
 
-  function buildSignedParams(acc) {
-    const params = JSON.parse(JSON.stringify(acc.params));
-    delete params.sign;
-    delete params.signDate;
-    params.signDate = getUTCSignDate();
-    const signBase = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
-    params.sign = MD5(signBase + SECRET);
-    return params;
+function buildSignedParamsRaw(capture) {
+  const params = {};
+  for (let k in capture.paramsRaw || {}) {
+    if (k !== 'sign' && k !== 'signDate') params[k] = capture.paramsRaw[k];
   }
+  params.signDate = getUTCSignDate();
+  const signBase = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
+  params.sign = MD5(signBase + SECRET);
+  return params;
+}
 
-  function buildUrl(path, acc) {
-    const params = buildSignedParams(acc);
-    const qs = Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
-    return `https://${API_HOST}/app/${path}?${qs}`;
+function buildUrl(path, capture) {
+  const params = buildSignedParamsRaw(capture);
+  const qs = Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
+  return `https://${API_HOST}/app/${path}?${qs}`;
+}
+
+function cloneHeaders(headers) {
+  const out = {};
+  for (let k in headers || {}) out[k] = headers[k];
+  return out;
+}
+
+function buildHeaders(capture, ua) {
+  const headers = cloneHeaders(capture.headers || {});
+  delete headers['Content-Length']; delete headers['content-length'];
+  delete headers[':authority']; delete headers[':method']; delete headers[':path']; delete headers[':scheme'];
+  headers['Host'] = API_HOST;
+  headers['Accept'] = headers['Accept'] || 'application/json';
+  for (let k in headers) {
+    if (k.toLowerCase() === 'user-agent') delete headers[k];
   }
+  headers['User-Agent'] = ua;
+  return headers;
+}
 
-  function get(url, ua) {
-    return new Promise((resolve, reject) => {
-      $httpClient.get({ url, headers: { "User-Agent": ua || "WeTalk/30.6.0" } }, (error, response, data) => {
-        if (error) reject(error);
-        else resolve(data);
-      });
+function notify(title, body) {
+  $notification.post(scriptName, title, body);
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function runAccount(acc, index, total) {
+  const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
+  const ua = buildUA(acc.baseUA, acc.uaSeed);
+  const headers = buildHeaders(acc.capture, ua);
+  const msgs = [tag];
+
+  function fetchApi(path) {
+    return $httpClient.get({
+      url: buildUrl(path, acc.capture),
+      headers: headers
     });
   }
 
-  async function run() {
-    const log = [];
-    for (let i = 0; i < ids.length; i++) {
-      const acc = store.accounts[ids[i]];
-      log.push(`[${acc.alias}]`);
-      try {
-        // 查询余额
-        const balanceRes = await get(buildUrl("queryBalanceAndBonus", acc), acc.ua);
-        const balance = JSON.parse(balanceRes);
-        log.push(`💰 余额：${balance.result?.balance || 0} Coins`);
-
-        // 签到
-        const checkInRes = await get(buildUrl("checkIn", acc), acc.ua);
-        const checkIn = JSON.parse(checkInRes);
-        log.push(`✅ 签到：${checkIn.retmsg || "成功"}`);
-
-        // 视频奖励（最多5次）
-        for (let j = 1; j <= 5; j++) {
-          await new Promise(r => setTimeout(r, 2000));
-          const videoRes = await get(buildUrl("videoBonus", acc), acc.ua);
-          const video = JSON.parse(videoRes);
-          log.push(video.retcode === 0 ? `🎬 视频${j}：+${video.result?.bonus || 0} Coins` : `⏸ 视频${j}：${video.retmsg}`);
-        }
-      } catch (e) {
-        log.push(`❌ 异常：${e.message || "请求失败"}`);
-      }
+  function doVideoLoop(count) {
+    let i = 0;
+    function next() {
+      if (i >= count) return Promise.resolve();
+      return new Promise(resolve => {
+        setTimeout(() => {
+          i++;
+          fetchApi('videoBonus').then(res => {
+            try {
+              const d = JSON.parse(res.body);
+              if (d.retcode === 0) {
+                msgs.push(`🎬 视频${i}：+${d.result?.bonus || '?'} Coins`);
+                resolve(next());
+              } else {
+                msgs.push(`⏸ 视频${i}：${d.retmsg}`);
+                resolve();
+              }
+            } catch (e) {
+              msgs.push(`❌ 视频${i}：解析失败`);
+              resolve();
+            }
+          }).catch(err => {
+            msgs.push(`❌ 视频${i}：${err.error || '请求失败'}`);
+            resolve();
+          });
+        }, i === 0 ? 1500 : VIDEO_DELAY);
+      });
     }
-    $notification.post("WeTalk", "🎉 签到完成", log.join("\n"));
-    $done();
+    return next();
   }
 
-  run().catch(e => {
-    $notification.post("WeTalk", "❌ 签到失败", e.message || "未知错误");
-    $done();
+  return fetchApi('queryBalanceAndBonus').then(res => {
+    try {
+      const d = JSON.parse(res.body);
+      if (d.retcode === 0) msgs.push(`💰 余额：${d.result.balance} Coins`);
+      else msgs.push(`⚠️ 查询：${d.retmsg}`);
+    } catch (e) { msgs.push('❌ 查询：解析失败'); }
+    return fetchApi('checkIn');
+  }).then(res => {
+    try {
+      const d = JSON.parse(res.body);
+      if (d.retcode === 0) msgs.push(`✅ 签到：${(d.result?.bonusHint || d.retmsg || '').replace(/\n/g, ' ')}`);
+      else msgs.push(`⚠️ 签到：${d.retmsg}`);
+    } catch (e) { msgs.push('❌ 签到：解析失败'); }
+    return doVideoLoop(MAX_VIDEO);
+  }).then(() => fetchApi('queryBalanceAndBonus')).then(res => {
+    try {
+      const d = JSON.parse(res.body);
+      if (d.retcode === 0) msgs.push(`💰 最新余额：${d.result.balance} Coins`);
+    } catch (e) {}
+    return msgs.join('\n');
+  }).catch(err => {
+    msgs.push(`❌ 异常：${err.error || String(err)}`);
+    return msgs.join('\n');
   });
+}
+
+// ========== 抓包入库逻辑（Surge 兼容）==========
+if (typeof $request !== 'undefined' && $request) {
+  const paramsRaw = parseRawQuery($request.url);
+  const headersMap = normalizeHeaderNameMap($request.headers || {});
+  let baseUA = '';
+  for (let k in headersMap) {
+    if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
+  }
+
+  const store = loadStore();
+  const fp = fingerprintOf(paramsRaw);
+  const now = Date.now();
+  const existed = !!store.accounts[fp];
+  const uaSeed = existed ? store.accounts[fp].uaSeed : store.order.length;
+  const alias = existed ? store.accounts[fp].alias : `账号${store.order.length + 1}`;
+
+  store.accounts[fp] = {
+    id: fp,
+    alias,
+    uaSeed,
+    baseUA,
+    capture: { url: $request.url, paramsRaw, headers: headersMap },
+    createdAt: existed ? store.accounts[fp].createdAt : now,
+    updatedAt: now
+  };
+  if (!existed) store.order.push(fp);
+  saveStore(store);
+
+  const total = store.order.length;
+  notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
+  console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}`);
+  $done({});
+
+} else {
+  // ========== 定时任务逻辑 ==========
+  const store = loadStore();
+  const ids = store.order.filter(id => store.accounts[id]);
+  if (!ids.length) {
+    notify('⚠️ 未抓到任何账号', '请先打开 WeTalk 触发抓包');
+    $done();
+  } else {
+    const total = ids.length;
+    const results = [];
+    let chain = Promise.resolve();
+    ids.forEach((id, idx) => {
+      chain = chain
+        .then(() => runAccount(store.accounts[id], idx, total))
+        .then(text => results.push(text))
+        .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
+    });
+    chain.then(() => {
+      notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
+      $done();
+    }).catch(err => {
+      notify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.message || String(err)));
+      $done();
+    });
+  }
 }
