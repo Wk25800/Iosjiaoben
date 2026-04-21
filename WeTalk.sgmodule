@@ -1,12 +1,11 @@
-#!name=WeTalk 自动抓包
-#!desc=自动获取账号 Cookie | Surge 专用
-#!module-type=generic
+#!name=WeTalk 自动签到+视频奖励
+#!desc=Surge版自动抓包+签到+视频奖励
+#!author=ChatGPT
+#!version=1.0
 
 [Script]
-# 对应 QX 的 script-request-header（捕获请求）
-WeTalk_Capture = type=http-request,pattern=^https://api\.wetalkapp\.com/app/queryBalanceAndBonus,script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js,requires-body=0
-# 定时任务（每天 8:20 / 20:20 自动执行）
-WeTalk_Task = type=cron,cronexp="20 8,20 * * *",script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js
+WeTalk-Capture = type=http-request,pattern=^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus.*,requires-body=0,max-size=0,script-path=wetalk.js
+WeTalk-Run = type=cron,cronexp=20 8,20 * * *,wake-system=1,timeout=180,script-path=wetalk.js
 
 [MITM]
 hostname = %APPEND% api.wetalkapp.com
