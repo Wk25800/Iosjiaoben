@@ -60,8 +60,10 @@ function MD5(string) {
   }
   const x = ConvertToWordArray(string);
   let a = 0x67452301, b = 0xEFCDAB89, c = 0x98BADCFE, d = 0x10325476;
-  const S11 = 7, S12 = 12, S13 = 17, S14 = 22, S21 = 5, S22 = 9, S23 = 14, S24 = 20;
-  const S31 = 4, S32 = 11, S33 = 16, S34 = 23, S41 = 6, S42 = 10, S43 = 15, S44 = 21;
+  const S11 = 7, S12 = 12, S13 = 17, S14 = 22;
+  const S21 = 5, S22 = 9, S23 = 14, S24 = 20;
+  const S31 = 4, S32 = 11, S33 = 16, S34 = 23;
+  const S41 = 6, S42 = 10, S43 = 15, S44 = 21;
   for (let k = 0; k < x.length; k += 16) {
     const AA = a, BB = b, CC = c, DD = d;
     a = FF(a,b,c,d,x[k+0],S11,0xD76AA478); d = FF(d,a,b,c,x[k+1],S12,0xE8C7B756); c = FF(c,d,a,b,x[k+2],S13,0x242070DB); b = FF(b,c,d,a,x[k+3],S14,0xC1BDCEEE);
@@ -93,7 +95,7 @@ function getUTCSignDate() {
 
 function normalizeHeaderNameMap(headers) {
   const out = {};
-  for (let k in headers || {}) out[k] = headers[k];
+  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
   return out;
 }
 
@@ -117,6 +119,7 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
+// ================= Surge 存储适配 =================
 function loadStore() {
   const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 1, accounts: {}, order: [] };
@@ -159,9 +162,9 @@ function buildUA(baseUA, seed) {
 
 function buildSignedParamsRaw(capture) {
   const params = {};
-  for (let k in capture.paramsRaw || {}) {
+  Object.keys(capture.paramsRaw || {}).forEach(k => {
     if (k !== 'sign' && k !== 'signDate') params[k] = capture.paramsRaw[k];
-  }
+  });
   params.signDate = getUTCSignDate();
   const signBase = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
   params.sign = MD5(signBase + SECRET);
@@ -176,7 +179,7 @@ function buildUrl(path, capture) {
 
 function cloneHeaders(headers) {
   const out = {};
-  for (let k in headers || {}) out[k] = headers[k];
+  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
   return out;
 }
 
@@ -186,13 +189,12 @@ function buildHeaders(capture, ua) {
   delete headers[':authority']; delete headers[':method']; delete headers[':path']; delete headers[':scheme'];
   headers['Host'] = API_HOST;
   headers['Accept'] = headers['Accept'] || 'application/json';
-  for (let k in headers) {
-    if (k.toLowerCase() === 'user-agent') delete headers[k];
-  }
+  Object.keys(headers).forEach(k => { if (k.toLowerCase() === 'user-agent') delete headers[k]; });
   headers['User-Agent'] = ua;
   return headers;
 }
 
+// ================= Surge 通知适配 =================
 function notify(title, body) {
   $notification.post(scriptName, title, body);
 }
@@ -201,18 +203,24 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// ================= Surge 请求适配 =================
+function fetchApi(url, headers) {
+  return new Promise((resolve, reject) => {
+    $httpClient.get({
+      url: url,
+      headers: headers
+    }, (err, response, body) => {
+      if (err) reject(err);
+      else resolve({ status: response.status, body });
+    });
+  });
+}
+
 function runAccount(acc, index, total) {
   const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
   const ua = buildUA(acc.baseUA, acc.uaSeed);
   const headers = buildHeaders(acc.capture, ua);
   const msgs = [tag];
-
-  function fetchApi(path) {
-    return $httpClient.get({
-      url: buildUrl(path, acc.capture),
-      headers: headers
-    });
-  }
 
   function doVideoLoop(count) {
     let i = 0;
@@ -221,7 +229,7 @@ function runAccount(acc, index, total) {
       return new Promise(resolve => {
         setTimeout(() => {
           i++;
-          fetchApi('videoBonus').then(res => {
+          fetchApi(buildUrl('videoBonus', acc.capture), headers).then(res => {
             try {
               const d = JSON.parse(res.body);
               if (d.retcode === 0) {
@@ -245,13 +253,13 @@ function runAccount(acc, index, total) {
     return next();
   }
 
-  return fetchApi('queryBalanceAndBonus').then(res => {
+  return fetchApi(buildUrl('queryBalanceAndBonus', acc.capture), headers).then(res => {
     try {
       const d = JSON.parse(res.body);
       if (d.retcode === 0) msgs.push(`💰 余额：${d.result.balance} Coins`);
       else msgs.push(`⚠️ 查询：${d.retmsg}`);
     } catch (e) { msgs.push('❌ 查询：解析失败'); }
-    return fetchApi('checkIn');
+    return fetchApi(buildUrl('checkIn', acc.capture), headers);
   }).then(res => {
     try {
       const d = JSON.parse(res.body);
@@ -259,26 +267,26 @@ function runAccount(acc, index, total) {
       else msgs.push(`⚠️ 签到：${d.retmsg}`);
     } catch (e) { msgs.push('❌ 签到：解析失败'); }
     return doVideoLoop(MAX_VIDEO);
-  }).then(() => fetchApi('queryBalanceAndBonus')).then(res => {
+  }).then(() => fetchApi(buildUrl('queryBalanceAndBonus', acc.capture), headers)).then(res => {
     try {
       const d = JSON.parse(res.body);
       if (d.retcode === 0) msgs.push(`💰 最新余额：${d.result.balance} Coins`);
     } catch (e) {}
     return msgs.join('\n');
   }).catch(err => {
-    msgs.push(`❌ 异常：${err.error || String(err)}`);
+    msgs.push(`❌ 异常：${err.message || String(err)}`);
     return msgs.join('\n');
   });
 }
 
-// ========== 抓包入库逻辑（Surge 兼容）==========
+// ================= 抓包入库（核心弹窗逻辑）=================
 if (typeof $request !== 'undefined' && $request) {
   const paramsRaw = parseRawQuery($request.url);
   const headersMap = normalizeHeaderNameMap($request.headers || {});
   let baseUA = '';
-  for (let k in headersMap) {
+  Object.keys(headersMap).forEach(k => {
     if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
-  }
+  });
 
   const store = loadStore();
   const fp = fingerprintOf(paramsRaw);
@@ -300,12 +308,14 @@ if (typeof $request !== 'undefined' && $request) {
   saveStore(store);
 
   const total = store.order.length;
+
+  // ========== 你要的弹窗就在这里！必弹 ==========
   notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
-  console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}`);
+
   $done({});
 
 } else {
-  // ========== 定时任务逻辑 ==========
+  // 定时任务
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
