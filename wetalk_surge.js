@@ -1,20 +1,18 @@
-// WeTalk 自动化签到+视频奖励 Surge 专属最终版
+// WeTalk 自动化签到+视频奖励 Surge 最终修复版
 const scriptName = 'WeTalk';
 const storeKey = 'wetalk_accounts_v1';
 const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
 const API_HOST = 'api.wetalkapp.com';
-const MAX_VIDEO = 5; // 每日最大视频奖励次数
-const VIDEO_DELAY = 8000; // 视频奖励间隔(毫秒)
-const ACCOUNT_GAP = 3500; // 多账号间隔(毫秒)
+const MAX_VIDEO = 5;
+const VIDEO_DELAY = 8000;
+const ACCOUNT_GAP = 3500;
 
-// 随机UA参数池
 const IOS_VERSIONS = ['17.5.1','17.6.1','17.4.1','17.2.1','16.7.8','17.6','17.3.1','18.0.1','17.1.2','16.6.1'];
 const IOS_SCALES = ['2.00','3.00','3.00','2.00','3.00'];
 const IPHONE_MODELS = ['iPhone14,3','iPhone13,3','iPhone15,3','iPhone16,1','iPhone14,7','iPhone13,2','iPhone15,2','iPhone12,1'];
 const CFN_VERS = ['1410.0.3','1494.0.7','1568.100.1','1209.1','1474.0.4','1568.200.2'];
 const DARWIN_VERS = ['22.6.0','23.5.0','23.6.0','24.0.0','22.4.0'];
 
-// MD5签名核心函数（与原脚本完全一致，保证签名校验通过）
 function MD5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
   function AddUnsigned(lX, lY) {
@@ -88,7 +86,6 @@ function MD5(string) {
   return (WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d)).toLowerCase();
 }
 
-// 工具函数（全Surge环境兼容）
 function getUTCSignDate() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -121,7 +118,6 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
-// Surge专属存储适配
 function loadStore() {
   const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 1, accounts: {}, order: [] };
@@ -143,7 +139,6 @@ function pickItem(arr, seed) {
   return arr[seed % arr.length];
 }
 
-// UA随机生成（与原逻辑一致）
 function buildUA(baseUA, seed) {
   const iosVer = pickItem(IOS_VERSIONS, seed);
   const scale = pickItem(IOS_SCALES, seed + 1);
@@ -163,7 +158,6 @@ function buildUA(baseUA, seed) {
   return `WeTalk/30.6.0 (com.innovationworks.wetalk; build:28; iOS ${iosVer}) Alamofire/5.4.3`;
 }
 
-// 签名参数生成（与原服务端校验逻辑完全匹配）
 function buildSignedParamsRaw(capture) {
   const params = {};
   Object.keys(capture.paramsRaw || {}).forEach(k => {
@@ -198,7 +192,6 @@ function buildHeaders(capture, ua) {
   return headers;
 }
 
-// Surge专属通知适配
 function notify(title, body) {
   $notification.post(scriptName, title, body);
 }
@@ -207,14 +200,12 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// 核心签到+视频任务逻辑
 function runAccount(acc, index, total) {
   const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
   const ua = buildUA(acc.baseUA, acc.uaSeed);
   const headers = buildHeaders(acc.capture, ua);
   const msgs = [tag];
 
-  // Surge专属网络请求Promise封装（解决原生回调不支持.then的问题）
   function fetchApi(path) {
     return new Promise((resolve, reject) => {
       $httpClient.get({ url: buildUrl(path, acc.capture), headers }, (error, response, data) => {
@@ -227,7 +218,6 @@ function runAccount(acc, index, total) {
     });
   }
 
-  // 视频奖励循环逻辑
   function doVideoLoop(count) {
     let i = 0;
     function next() {
@@ -259,7 +249,6 @@ function runAccount(acc, index, total) {
     return next();
   }
 
-  // 完整任务流
   return fetchApi('queryBalanceAndBonus').then(res => {
     try {
       const d = JSON.parse(res.body);
@@ -286,9 +275,8 @@ function runAccount(acc, index, total) {
   });
 }
 
-// 双模式适配：抓包模式 + 定时任务模式
-if (typeof $request !== 'undefined') {
-  // 抓包模式：捕获账号参数
+// 只对你截图里的 queryBalanceAndBonus 接口触发保存，避免其他接口干扰
+if (typeof $request !== 'undefined' && $request.url.includes('/app/queryBalanceAndBonus')) {
   const paramsRaw = parseRawQuery($request.url);
   const headersMap = normalizeHeaderNameMap($request.headers || {});
   let baseUA = '';
@@ -317,8 +305,7 @@ if (typeof $request !== 'undefined') {
   notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
   console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}`);
   $done({});
-} else {
-  // 定时任务模式：执行签到
+} else if (typeof $request === 'undefined') {
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
@@ -341,4 +328,6 @@ if (typeof $request !== 'undefined') {
       $done();
     });
   }
+} else {
+  $done({});
 }
