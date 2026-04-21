@@ -1,0 +1,10 @@
+#!name=WeTalk 自动抓包
+#!desc=自动获取账号 Cookie | Surge 专用
+#!module-type=generic
+
+[Script]
+# 对应 QX 的 script-request-header（捕获请求）
+WeTalk_Capture = type=http-request,pattern=^https://api\.wetalkapp\.com/app/queryBalanceAndBonus,script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js,requires-body=0
+
+[MITM]
+hostname = %APPEND% api.wetalkapp.com
