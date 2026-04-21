@@ -1,11 +1,9 @@
-#!name=WeTalk 自动签到+视频奖励
-#!desc=Surge稳定版
-#!author=ChatGPT
-
 [Script]
-WeTalk-Capture = type=http-request,pattern=^https:\/\/api\.wetalkapp\.com\/app\/,requires-body=false,script-path=https://ghproxy.net/https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js
+# 账号捕获脚本（抓包用，必须开启）
+WeTalk账号捕获 = type=http-request,pattern=^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus,script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js,timeout=10,enabled=true
 
-WeTalk-Run = type=cron,cronexp=20 8,20 * * *,wake-system=1,timeout=180,script-path=https://ghproxy.net/https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js
+# 每日自动签到定时任务（按需调整执行时间）
+WeTalk自动签到 = type=cron,cronexp="20 8,20 * * *",script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wetalk_surge.js,timeout=60,enabled=true
 
 [MITM]
-hostname = %APPEND% api.wetalkapp.com
+hostname = api.wetalkapp.com
