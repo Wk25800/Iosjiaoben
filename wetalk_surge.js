@@ -1,17 +1,7 @@
 const scriptName = 'WeTalk';
 const storeKey = 'wetalk_accounts_v1';
-const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
-const API_HOST = 'api.wetalkapp.com';
-const MAX_VIDEO = 5;
-const VIDEO_DELAY = 8000;
-const ACCOUNT_GAP = 3500;
 
-const IOS_VERSIONS = ['17.5.1','17.6.1','17.4.1','17.2.1','16.7.8','17.6','17.3.1','18.0.1','17.1.2','16.6.1'];
-const IOS_SCALES = ['2.00','3.00','3.00','2.00','3.00'];
-const IPHONE_MODELS = ['iPhone14,3','iPhone13,3','iPhone15,3','iPhone16,1','iPhone14,7','iPhone13,2','iPhone15,2','iPhone12,1'];
-const CFN_VERS = ['1410.0.3','1494.0.7','1568.100.1','1209.1','1474.0.4','1568.200.2'];
-const DARWIN_VERS = ['22.6.0','23.5.0','23.6.0','24.0.0','22.4.0'];
-
+// 核心MD5函数（保留签名逻辑）
 function MD5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
   function AddUnsigned(lX, lY) {
@@ -87,18 +77,7 @@ function MD5(string) {
   return (WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d)).toLowerCase();
 }
 
-function getUTCSignDate() {
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  return `${now.getUTCFullYear()}-${pad(now.getUTCMonth()+1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
-}
-
-function normalizeHeaderNameMap(headers) {
-  const out = {};
-  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
-  return out;
-}
-
+// 解析URL参数
 function parseRawQuery(url) {
   const query = (url.split('?')[1] || '').split('#')[0];
   const rawMap = {};
@@ -113,21 +92,19 @@ function parseRawQuery(url) {
   return rawMap;
 }
 
+// 生成账号指纹
 function fingerprintOf(paramsRaw) {
   const drop = { sign:1, signDate:1, timestamp:1, ts:1, nonce:1, random:1, reqTime:1, reqId:1, requestId:1 };
   const base = Object.keys(paramsRaw || {}).filter(k => !drop[k]).sort().map(k => `${k}=${paramsRaw[k]}`).join('&');
   return MD5(base).slice(0, 12);
 }
 
-// ================= Surge 存储适配 =================
+// 存储与读取
 function loadStore() {
   const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 1, accounts: {}, order: [] };
   try {
-    const obj = JSON.parse(raw);
-    if (!obj.accounts) obj.accounts = {};
-    if (!Array.isArray(obj.order)) obj.order = Object.keys(obj.accounts);
-    return obj;
+    return JSON.parse(raw);
   } catch (e) {
     return { version: 1, accounts: {}, order: [] };
   }
@@ -137,152 +114,15 @@ function saveStore(store) {
   $persistentStore.write(JSON.stringify(store), storeKey);
 }
 
-function pickItem(arr, seed) {
-  return arr[seed % arr.length];
-}
-
-function buildUA(baseUA, seed) {
-  const iosVer = pickItem(IOS_VERSIONS, seed);
-  const scale = pickItem(IOS_SCALES, seed + 1);
-  const model = pickItem(IPHONE_MODELS, seed + 2);
-  const cfn = pickItem(CFN_VERS, seed + 3);
-  const darwin = pickItem(DARWIN_VERS, seed + 4);
-  if (baseUA && typeof baseUA === 'string') {
-    let ua = baseUA;
-    let changed = false;
-    if (/iOS \d+(\.\d+){0,2}/.test(ua)) { ua = ua.replace(/iOS \d+(\.\d+){0,2}/, `iOS ${iosVer}`); changed = true; }
-    if (/Scale\/\d+(\.\d+)?/.test(ua)) { ua = ua.replace(/Scale\/\d+(\.\d+)?/, `Scale/${scale}`); changed = true; }
-    if (/iPhone\d+,\d+/.test(ua)) { ua = ua.replace(/iPhone\d+,\d+/, model); changed = true; }
-    if (/CFNetwork\/[\d.]+/.test(ua)) { ua = ua.replace(/CFNetwork\/[\d.]+/, `CFNetwork/${cfn}`); changed = true; }
-    if (/Darwin\/[\d.]+/.test(ua)) { ua = ua.replace(/Darwin\/[\d.]+/, `Darwin/${darwin}`); changed = true; }
-    if (changed) return ua;
-  }
-  return `WeTalk/30.6.0 (com.innovationworks.wetalk; build:28; iOS ${iosVer}) Alamofire/5.4.3`;
-}
-
-function buildSignedParamsRaw(capture) {
-  const params = {};
-  Object.keys(capture.paramsRaw || {}).forEach(k => {
-    if (k !== 'sign' && k !== 'signDate') params[k] = capture.paramsRaw[k];
-  });
-  params.signDate = getUTCSignDate();
-  const signBase = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
-  params.sign = MD5(signBase + SECRET);
-  return params;
-}
-
-function buildUrl(path, capture) {
-  const params = buildSignedParamsRaw(capture);
-  const qs = Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
-  return `https://${API_HOST}/app/${path}?${qs}`;
-}
-
-function cloneHeaders(headers) {
-  const out = {};
-  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
-  return out;
-}
-
-function buildHeaders(capture, ua) {
-  const headers = cloneHeaders(capture.headers || {});
-  delete headers['Content-Length']; delete headers['content-length'];
-  delete headers[':authority']; delete headers[':method']; delete headers[':path']; delete headers[':scheme'];
-  headers['Host'] = API_HOST;
-  headers['Accept'] = headers['Accept'] || 'application/json';
-  Object.keys(headers).forEach(k => { if (k.toLowerCase() === 'user-agent') delete headers[k]; });
-  headers['User-Agent'] = ua;
-  return headers;
-}
-
-// ================= Surge 通知适配 =================
+// 通知
 function notify(title, body) {
   $notification.post(scriptName, title, body);
 }
 
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-// ================= Surge 请求适配 =================
-function fetchApi(url, headers) {
-  return new Promise((resolve, reject) => {
-    $httpClient.get({
-      url: url,
-      headers: headers
-    }, (err, response, body) => {
-      if (err) reject(err);
-      else resolve({ status: response.status, body });
-    });
-  });
-}
-
-function runAccount(acc, index, total) {
-  const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
-  const ua = buildUA(acc.baseUA, acc.uaSeed);
-  const headers = buildHeaders(acc.capture, ua);
-  const msgs = [tag];
-
-  function doVideoLoop(count) {
-    let i = 0;
-    function next() {
-      if (i >= count) return Promise.resolve();
-      return new Promise(resolve => {
-        setTimeout(() => {
-          i++;
-          fetchApi(buildUrl('videoBonus', acc.capture), headers).then(res => {
-            try {
-              const d = JSON.parse(res.body);
-              if (d.retcode === 0) {
-                msgs.push(`🎬 视频${i}：+${d.result?.bonus || '?'} Coins`);
-                resolve(next());
-              } else {
-                msgs.push(`⏸ 视频${i}：${d.retmsg}`);
-                resolve();
-              }
-            } catch (e) {
-              msgs.push(`❌ 视频${i}：解析失败`);
-              resolve();
-            }
-          }).catch(err => {
-            msgs.push(`❌ 视频${i}：${err.error || '请求失败'}`);
-            resolve();
-          });
-        }, i === 0 ? 1500 : VIDEO_DELAY);
-      });
-    }
-    return next();
-  }
-
-  return fetchApi(buildUrl('queryBalanceAndBonus', acc.capture), headers).then(res => {
-    try {
-      const d = JSON.parse(res.body);
-      if (d.retcode === 0) msgs.push(`💰 余额：${d.result.balance} Coins`);
-      else msgs.push(`⚠️ 查询：${d.retmsg}`);
-    } catch (e) { msgs.push('❌ 查询：解析失败'); }
-    return fetchApi(buildUrl('checkIn', acc.capture), headers);
-  }).then(res => {
-    try {
-      const d = JSON.parse(res.body);
-      if (d.retcode === 0) msgs.push(`✅ 签到：${(d.result?.bonusHint || d.retmsg || '').replace(/\n/g, ' ')}`);
-      else msgs.push(`⚠️ 签到：${d.retmsg}`);
-    } catch (e) { msgs.push('❌ 签到：解析失败'); }
-    return doVideoLoop(MAX_VIDEO);
-  }).then(() => fetchApi(buildUrl('queryBalanceAndBonus', acc.capture), headers)).then(res => {
-    try {
-      const d = JSON.parse(res.body);
-      if (d.retcode === 0) msgs.push(`💰 最新余额：${d.result.balance} Coins`);
-    } catch (e) {}
-    return msgs.join('\n');
-  }).catch(err => {
-    msgs.push(`❌ 异常：${err.message || String(err)}`);
-    return msgs.join('\n');
-  });
-}
-
-// ================= 抓包入库（核心弹窗逻辑）=================
+// 主逻辑（抓号+弹窗）
 if (typeof $request !== 'undefined' && $request) {
   const paramsRaw = parseRawQuery($request.url);
-  const headersMap = normalizeHeaderNameMap($request.headers || {});
+  const headersMap = $request.headers || {};
   let baseUA = '';
   Object.keys(headersMap).forEach(k => {
     if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
@@ -292,13 +132,12 @@ if (typeof $request !== 'undefined' && $request) {
   const fp = fingerprintOf(paramsRaw);
   const now = Date.now();
   const existed = !!store.accounts[fp];
-  const uaSeed = existed ? store.accounts[fp].uaSeed : store.order.length;
   const alias = existed ? store.accounts[fp].alias : `账号${store.order.length + 1}`;
 
+  // 保存账号
   store.accounts[fp] = {
     id: fp,
     alias,
-    uaSeed,
     baseUA,
     capture: { url: $request.url, paramsRaw, headers: headersMap },
     createdAt: existed ? store.accounts[fp].createdAt : now,
@@ -307,36 +146,11 @@ if (typeof $request !== 'undefined' && $request) {
   if (!existed) store.order.push(fp);
   saveStore(store);
 
-  const total = store.order.length;
-
-  // ========== 你要的弹窗就在这里！必弹 ==========
-  notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
+  // 强制弹窗（你要的效果）
+  notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${store.order.length}`);
 
   $done({});
-
 } else {
-  // 定时任务
-  const store = loadStore();
-  const ids = store.order.filter(id => store.accounts[id]);
-  if (!ids.length) {
-    notify('⚠️ 未抓到任何账号', '请先打开 WeTalk 触发抓包');
-    $done();
-  } else {
-    const total = ids.length;
-    const results = [];
-    let chain = Promise.resolve();
-    ids.forEach((id, idx) => {
-      chain = chain
-        .then(() => runAccount(store.accounts[id], idx, total))
-        .then(text => results.push(text))
-        .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
-    });
-    chain.then(() => {
-      notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
-      $done();
-    }).catch(err => {
-      notify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.message || String(err)));
-      $done();
-    });
-  }
+  // 非抓包场景直接结束
+  $done();
 }
