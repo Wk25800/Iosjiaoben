@@ -1,22 +1,28 @@
-# PingMe 签到 零报错 Stash 配置
-mitm:
-  hosts:
-    - api.pingmeapp.net
+name: |-
+  PingMe
+desc: |-
+  PingMe
+icon: |-
+  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1100.png
 
-script-providers:
-  pingme-script:
-    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
-    interval: 86400
+http:
 
-script:
-  - match: ^https://api\.pingmeapp\.net/app/queryBalanceAndBonus
-    name: pingme-script
-    type: request-header
-    enable: true
+  mitm:
+    - "api.pingmeapp.net"
+
+  script:
+    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+      name: "PingMe_5"
+      type: request
+      timeout: 60
 
 cron:
   script:
-    - name: pingme-script
+    - name: "PingMe_5"
       cron: 30 8,20 * * *
-      timeout: 15
-      enable: true
+      timeout: 120
+
+script-providers:
+  "PingMe_5":
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
+    interval: 86400
