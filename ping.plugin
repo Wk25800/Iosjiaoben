@@ -1,3 +1,12 @@
+[Script]
+http-request ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus script-path=本地/PingMe.js, tag=PingMe抓包
+
+cron-task */30 8-19 * * * script-path=本地/PingMe.js, tag=PingMe每30分钟签到, enabled=true
+
+
+[MitM]
+api.pingmeapp.net
+
 //2026/05/11
 // 已适配 Loon 专用，去掉QX依赖
 const scriptName = 'PingMe';
