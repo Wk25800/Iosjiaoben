@@ -116,13 +116,13 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
-// 全环境兼容存储，测试/Stash/Loon都能用
+// 兼容Stash/QLX存储API
 function loadStore() {
   let raw = '{}';
-  if (typeof $prefs !== 'undefined') {
-    raw = $prefs.valueForKey(storeKey);
-  } else if (typeof $storage !== 'undefined') {
+  if (typeof $storage !== 'undefined') {
     raw = $storage.get(storeKey);
+  } else if (typeof $prefs !== 'undefined') {
+    raw = $prefs.valueForKey(storeKey);
   }
   if (!raw) return { version: 1, accounts: {}, order: [] };
   try {
@@ -137,14 +137,14 @@ function loadStore() {
 
 function saveStore(store) {
   const str = JSON.stringify(store);
-  if (typeof $prefs !== 'undefined') {
-    $prefs.setValueForKey(str, storeKey);
-  } else if (typeof $storage !== 'undefined') {
+  if (typeof $storage !== 'undefined') {
     $storage.set(storeKey, str);
+  } else if (typeof $prefs !== 'undefined') {
+    $prefs.setValueForKey(str, storeKey);
   }
 }
 
-// 全环境兼容通知，测试/Stash/Loon都能用
+// 多端通知兼容
 function notify(title, body) {
   if (typeof $notification !== 'undefined') {
     $notification.post(scriptName, title, body);
@@ -297,11 +297,13 @@ function runAccount(acc, index, total) {
   });
 }
 
-if (typeof $request !== 'undefined' && $request) {
+if ($request) {
   const paramsRaw = parseRawQuery($request.url);
-  const headersMap = normalizeHeaderNameMap($request.headers || {});
+  const headersMap = normalizeHeaderNameMap($request.headers);
   let baseUA = '';
-  Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
+  Object.keys(headersMap).forEach(k => {
+    if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
+  });
 
   const store = loadStore();
   const fp = fingerprintOf(paramsRaw);
@@ -323,30 +325,27 @@ if (typeof $request !== 'undefined' && $request) {
   saveStore(store);
 
   const total = store.order.length;
-  notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
-  console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}\n${JSON.stringify(store.accounts[fp], null, 2)}`);
+  notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}\n账号总数：${total}`);
   $done({});
 } else {
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
-    notify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
+    notify('⚠️ 暂无账号', '先打开APP抓包录入账号');
     $done();
-  } else {
-    const total = ids.length;
-    const results = [];
-    let chain = Promise.resolve();
-    ids.forEach((id, idx) => {
-      chain = chain.then(() => runAccount(store.accounts[id], idx, total))
-        .then(text => { results.push(text); })
-        .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
-    });
-    chain.then(() => {
-      notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
-      $done();
-    }).catch(err => {
-      notify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
-      $done();
-    });
   }
+  let results = [];
+  let taskChain = Promise.resolve();
+  ids.forEach((id, idx) => {
+    taskChain = taskChain.then(() => runAccount(store.accounts[id], idx, total))
+    .then(log => results.push(log))
+    .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
+  });
+  taskChain.then(() => {
+    notify('🎉 批量任务完成', results.join('\n——————\n'));
+    $done();
+  }).catch(err => {
+    notify('❌ 任务出错', String(err));
+    $done();
+  });
 }
