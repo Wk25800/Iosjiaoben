@@ -1,0 +1,69 @@
+name: PingMe&WeTalk
+description: PingMe跟WeTalk每日签到，支持多账号。分流指定到包含所有节点的round-robin策略组。
+icon: https://raw.githubusercontent.com/axhani/icon/refs/heads/main/pingme&wetalk.png
+
+# 参数设置（可以在 Stash App 的“覆写”或“参数”界面直接修改）
+arguments:
+  - key: pm_switch
+    value: true
+    label: PingMe任务开关
+  - key: wt_switch
+    value: true
+    label: WeTalk任务开关
+  - key: pm_token_switch
+    value: true
+    label: PM token获取开关
+  - key: wt_token_switch
+    value: true
+    label: WT token获取开关
+  - key: pm_cron
+    value: "0 8,20 * * *"
+    label: PM签到定时
+  - key: wt_cron
+    value: "30 8,20 * * *"
+    label: WT签到定时
+
+# 脚本配置
+scriptings:
+  # PingMe 定时签到
+  - name: PingMe签到任务
+    type: cron
+    cron: $pm_cron
+    script: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/PingMe.js
+    timeout: 600
+    condition: $pm_switch
+
+  # WeTalk 定时签到
+  - name: WeTalk签到任务
+    type: cron
+    cron: $wt_cron
+    script: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/WeTalk.js
+    timeout: 600
+    condition: $wt_switch
+
+  # PingMe Token 捕捉
+  - name: PingMe (token)
+    type: http-request
+    pattern: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+    script: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/PingMe.js
+    timeout: 300
+    condition: $pm_token_switch
+
+  # WeTalk Token 捕捉
+  - name: WeTalk（token）
+    type: http-request
+    pattern: ^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus
+    script: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/WeTalk.js
+    timeout: 300
+    condition: $wt_token_switch
+
+# 规则与分流
+rules:
+  - DOMAIN, api.pingmeapp.net, PROXY
+  - DOMAIN, api.wetalkapp.com, PROXY
+
+# MITM 配置（必须开启 Stash 的 MITM 功能并安装证书）
+mitm:
+  hostnames:
+    - api.pingmeapp.net
+    - api.wetalkapp.com
