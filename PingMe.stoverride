@@ -6,7 +6,7 @@ mitm:
 # 远程脚本配置（重点）
 script-providers:
   pingme-script:
-    url: https://raw.githubusercontent.com/ZenmoFeiShi/Qx/refs/heads/main/PingMe.js
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
     interval: 86400  # 每天自动更新一次[[__LINK_ICON]](https://stash.wiki/configuration/example-config?f_link_type=f_linkinlinenote&flow_extra=eyJpbmxpbmVfZGlzcGxheV9wb3NpdGlvbiI6MCwiZG9jX3Bvc2l0aW9uIjoyLCJkb2NfaWQiOiIifQ%3D%3D "__LINK_ICON")
 
 # 抓包入库规则
