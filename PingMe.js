@@ -1,4 +1,16 @@
-# PingMe 签到 Stash专用  script:
+name: |-
+  local
+desc: |-
+  local
+icon: |-
+  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1060.png
+
+http:
+
+  mitm:
+    - "api.pingmeapp.net"
+
+  script:
     - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
       name: "PingMe_5"
       type: request
@@ -15,10 +27,6 @@ script-providers:
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
     interval: 86400
 
-# 开启MITM抓包
-mitm:
-  hosts:
-    - api.pingmeapp.net
 const scriptName = 'PingMe';
 const storeKey = 'pingme_accounts_v1';
 const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
