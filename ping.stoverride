@@ -1,45 +1,46 @@
-name: PingMe&WeTalk
-description: PingMe跟WeTalk每日签到，支持多账号。分流指定到包含所有节点的round-robin策略组。
-icon: https://raw.githubusercontent.com/axhani/icon/refs/heads/main/pingme&wetalk.png
+name: |-
+  PingMe&WeTalk
+desc: |-
+  PingMe跟WeTalk每日签到，支持多账号。分流指定到包含所有节点的round-robin策略组。多账号使用方法：打开获取token开关登录不同的账号，点击我的页面。⚠️不要从app里面直接退出登录，卸载app重新安装，登录另一个需要签到的账号，以此类推
+author: |-
+  怎么肥事[https://t.me/Nzmgs]
+icon: |-
+  https://raw.githubusercontent.com/axhani/icon/refs/heads/main/pingme&wetalk.png
+date: |-
+  2026-4-16
+loon_version: |-
+  3.2.4(787)
 
+http:
 
-# 脚本配置
-scriptings:
-  # PingMe 定时签到
-  - name: PingMe签到任务
-    type: cron
-    cron: $pm_cron
-    script: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/PingMe.js
-    timeout: 600
-    condition: $pm_switch
+  mitm:
+    - "api.pingmeapp.net"
+    - "api.wetalkapp.com"
 
-  # WeTalk 定时签到
-  - name: WeTalk签到任务
-    type: cron
-    cron: $wt_cron
-    script: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/WeTalk.js
-    timeout: 600
-    condition: $wt_switch
+  script:
+    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+      name: "PingMe签到任务_7"
+      type: request
+      timeout: 300
 
-  # PingMe Token 捕捉
-  - name: PingMe (token)
-    type: http-request
-    pattern: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
-    script: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/PingMe.js
-    timeout: 300
-    condition: $pm_token_switch
+    - match: ^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus
+      name: "WeTalk签到任务_8"
+      type: request
+      timeout: 300
 
-  # WeTalk Token 捕捉
-  - name: WeTalk（token）
-    type: http-request
-    pattern: ^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus
-    script: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/WeTalk.js
-    timeout: 300
-    condition: $wt_token_switch
+cron:
+  script:
+    - name: "PingMe签到任务_7"
+      cron: {arg5}
+      timeout: 600
+    - name: "WeTalk签到任务_8"
+      cron: {arg6}
+      timeout: 600
 
-
-# MITM 配置（必须开启 Stash 的 MITM 功能并安装证书）
-mitm:
-  hostnames:
-    - api.pingmeapp.net
-    - api.wetalkapp.com
+script-providers:
+  "PingMe签到任务_7":
+    url: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/PingMe.js
+    interval: 86400
+  "WeTalk签到任务_8":
+    url: https://axhani.pages.dev/refs/heads/main/Script%20/Tasks/WeTalk.js
+    interval: 86400
