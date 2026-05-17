@@ -1,26 +1,25 @@
-name: PingMe
-desc: PingMe自动签到+多账号
-icon: https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1100.png
+name: 'PingMe 自动签到'
+desc: |-
+  PingMe多账号自动签到+刷金币
+icon: 'https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1100.png'
 
-mitm:
-  hosts:
+http:
+  mitm:
     - api.pingmeapp.net
 
-script-providers:
-  PingMe_签到:
-    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
-    interval: 86400
+  script:
+    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+      name: 'PingMe.签到.request'
+      type: request
+      timeout: 60
 
-script:
-  - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
-    name: PingMe_签到
-    type: request-header
-    timeout: 60
-    enable: true
+  script-providers:
+    'PingMe.签到.request':
+      url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
+      interval: 86400
 
 cron:
   script:
-    - name: PingMe_签到
+    - name: 'PingMe.签到.request'
       cron: 30 8,20 * * *
       timeout: 120
-      enable: true
