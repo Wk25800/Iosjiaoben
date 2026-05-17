@@ -1,16 +1,19 @@
-# PingMe 签到 Stash专用
-script:
-  # 抓Token入库
-  - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
-    script-path: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
-    type: request-header
-    enable: true
-  # 每日定时签到
-  - name: PingMe每日签到
-    type: cron
-    cron: 30 8,20 * * *
-    script-path: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
-    enable: true
+# PingMe 签到 Stash专用  script:
+    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
+      name: "PingMe_5"
+      type: request
+      timeout: 60
+
+cron:
+  script:
+    - name: "PingMe_5"
+      cron: 30 8,20 * * *
+      timeout: 120
+
+script-providers:
+  "PingMe_5":
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
+    interval: 86400
 
 # 开启MITM抓包
 mitm:
