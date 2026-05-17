@@ -2,29 +2,25 @@ name: PingMe
 desc: PingMe自动签到+多账号
 icon: https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1100.png
 
-# 1. MITM配置（顶级节点，Stash强制要求）
 mitm:
   hosts:
     - api.pingmeapp.net
 
-# 2. 远程脚本配置（完全沿用你原文件名PingMe.js）
 script-providers:
-  PingMe_签到: # 这个是Stash里的脚本显示名，随便改
+  PingMe_签到:
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
     interval: 86400
 
-# 3. 抓包规则（调用上面的远程脚本）
 script:
   - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
-    name: PingMe_签到 # 和上面script-providers的key完全一致
-    type: request-header # Stash抓包脚本强制类型，不能改
+    name: PingMe_签到
+    type: request-header
     timeout: 60
     enable: true
 
-# 4. 定时签到（调用上面的远程脚本）
 cron:
   script:
-    - name: PingMe_签到 # 和上面key完全一致
+    - name: PingMe_签到
       cron: 30 8,20 * * *
       timeout: 120
       enable: true
