@@ -1,16 +1,19 @@
-const scriptName = 'PingMe';
-const storeKey = 'pingme_accounts_v1';
-const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
+// PingMe Stash官方规范终极版 - 完全匹配官方API
+const SCRIPT_NAME = "PingMe";
+const STORE_KEY = "pingme_accounts_v2";
+const SECRET = "0fOiukQq7jXZV2GRi9LGlO";
 const MAX_VIDEO = 5;
 const VIDEO_DELAY = 8000;
 const ACCOUNT_GAP = 3500;
 
+// 设备指纹库
 const IOS_VERSIONS = ['17.5.1','17.6.1','17.4.1','17.2.1','16.7.8','17.6','17.3.1','18.0.1','17.1.2','16.6.1'];
 const IOS_SCALES = ['2.00','3.00','3.00','2.00','3.00'];
 const IPHONE_MODELS = ['iPhone14,3','iPhone13,3','iPhone15,3','iPhone16,1','iPhone14,7','iPhone13,2','iPhone15,2','iPhone12,1'];
 const CFN_VERS = ['1410.0.3','1494.0.7','1568.100.1','1209.1','1474.0.4','1568.200.2'];
 const DARWIN_VERS = ['22.6.0','23.5.0','23.6.0','24.0.0','22.4.0'];
 
+// 原生MD5实现
 function MD5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
   function AddUnsigned(lX, lY) {
@@ -84,18 +87,14 @@ function MD5(string) {
   return (WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d)).toLowerCase();
 }
 
+// 时间格式化
 function getUTCSignDate() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   return `${now.getUTCFullYear()}-${pad(now.getUTCMonth()+1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
 }
 
-function normalizeHeaderNameMap(headers) {
-  const out = {};
-  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
-  return out;
-}
-
+// URL参数解析
 function parseRawQuery(url) {
   const query = (url.split('?')[1] || '').split('#')[0];
   const rawMap = {};
@@ -110,19 +109,19 @@ function parseRawQuery(url) {
   return rawMap;
 }
 
+// 账号指纹生成
 function fingerprintOf(paramsRaw) {
   const drop = { sign:1, signDate:1, timestamp:1, ts:1, nonce:1, random:1, reqTime:1, reqId:1, requestId:1 };
   const base = Object.keys(paramsRaw || {}).filter(k => !drop[k]).sort().map(k => `${k}=${paramsRaw[k]}`).join('&');
   return MD5(base).slice(0, 12);
 }
 
-// ========== 适配Stash 存储读写 ==========
+// ========== 官方规范：持久化存储读写 ==========
 function loadStore() {
-  let raw = "";
-  if(typeof $storage !== "undefined"){
-    raw = $storage.get(storeKey) || "";
+  let raw = "{}";
+  if (typeof $persistentStore !== "undefined") {
+    raw = $persistentStore.read(STORE_KEY) || "{}";
   }
-  if (!raw) return { version: 1, accounts: {}, order: [] };
   try {
     const obj = JSON.parse(raw);
     if (!obj.accounts) obj.accounts = {};
@@ -134,11 +133,19 @@ function loadStore() {
 }
 
 function saveStore(store) {
-  if(typeof $storage !== "undefined"){
-    $storage.set(storeKey, JSON.stringify(store));
+  if (typeof $persistentStore !== "undefined") {
+    $persistentStore.write(JSON.stringify(store), STORE_KEY);
   }
 }
 
+// ========== 官方规范：通知推送 ==========
+function notify(title, body) {
+  if (typeof $notification !== "undefined") {
+    $notification.post(SCRIPT_NAME, title, body);
+  }
+}
+
+// 工具函数
 function pickItem(arr, seed) {
   return arr[seed % arr.length];
 }
@@ -209,17 +216,11 @@ function buildHeaders(capture, ua) {
   return headers;
 }
 
-// ========== 适配Stash 通知 ==========
-function notify(title, body) {
-  if(typeof $notification !== "undefined"){
-    $notification.post(scriptName, title, body);
-  }
-}
-
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// 单账号签到逻辑
 function runAccount(acc, index, total) {
   const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
   const ua = buildUA(acc.baseUA, acc.uaSeed);
@@ -229,7 +230,20 @@ function runAccount(acc, index, total) {
 
   function fetchApi(path, useFakeId) {
     const overrideId = useFakeId ? fakeDeviceId : null;
-    return $task.fetch({ url: buildUrl(path, acc.capture, overrideId), method: 'GET', headers });
+    // ========== 官方规范：HTTP请求 ==========
+    return new Promise((resolve, reject) => {
+      $httpClient.get({
+        url: buildUrl(path, acc.capture, overrideId),
+        method: 'GET',
+        headers: headers
+      }, (err, response, data) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve({ body: data });
+      });
+    });
   }
 
   function doVideoLoop(count) {
@@ -289,10 +303,10 @@ function runAccount(acc, index, total) {
   });
 }
 
-// ========== Stash 标准请求入口 ==========
+// ========== 抓包入库逻辑 ==========
 if (typeof $request !== 'undefined' && $request) {
   const paramsRaw = parseRawQuery($request.url);
-  const headersMap = normalizeHeaderNameMap($request.headers || {});
+  const headersMap = cloneHeaders($request.headers || {});
   let baseUA = '';
   Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
 
@@ -317,8 +331,12 @@ if (typeof $request !== 'undefined' && $request) {
 
   const total = store.order.length;
   notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}\n当前账号总数：${total}`);
+  console.log(`【${SCRIPT_NAME}】${existed ? 'update' : 'add'} account ${fp}`);
+  // 官方规范：结束必须调用$done
   $done({});
-} else {
+} 
+// ========== 面板点击/定时触发签到逻辑 ==========
+else {
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
