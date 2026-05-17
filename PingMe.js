@@ -1,32 +1,3 @@
-name: |-
-  local
-desc: |-
-  local
-icon: |-
-  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1060.png
-
-http:
-
-  mitm:
-    - "api.pingmeapp.net"
-
-  script:
-    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
-      name: "PingMe_5"
-      type: request
-      timeout: 60
-
-cron:
-  script:
-    - name: "PingMe_5"
-      cron: 30 8,20 * * *
-      timeout: 120
-
-script-providers:
-  "PingMe_5":
-    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
-    interval: 86400
-
 const scriptName = 'PingMe';
 const storeKey = 'pingme_accounts_v1';
 const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
