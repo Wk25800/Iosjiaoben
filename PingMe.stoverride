@@ -1,6 +1,5 @@
 name: 'PingMe 自动签到'
-desc: |-
-  PingMe多账号自动签到+刷金币
+desc: 'PingMe多账号自动签到+刷金币'
 icon: 'https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1100.png'
 
 http:
