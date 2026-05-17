@@ -22,6 +22,14 @@ cron:
       cron: 30 8,20 * * *
       timeout: 120
 
+tiles:
+  - name: PingMe_Sign
+    interval: 600
+    title: 'PingMe签到状态'
+    content: '等待首次运行'
+    icon: 'checkmark.circle.fill'
+    backgroundColor: '#FF6B6B'
+
 script-providers:
   "PingMe_5":
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
