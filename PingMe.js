@@ -145,8 +145,14 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
+// 全环境兼容存储，测试/Stash/Loon都能用
 function loadStore() {
-  const raw = $prefs.valueForKey(storeKey);
+  let raw = '{}';
+  if (typeof $prefs !== 'undefined') {
+    raw = $prefs.valueForKey(storeKey);
+  } else if (typeof $storage !== 'undefined') {
+    raw = $storage.get(storeKey);
+  }
   if (!raw) return { version: 1, accounts: {}, order: [] };
   try {
     const obj = JSON.parse(raw);
@@ -159,7 +165,22 @@ function loadStore() {
 }
 
 function saveStore(store) {
-  $prefs.setValueForKey(JSON.stringify(store), storeKey);
+  const str = JSON.stringify(store);
+  if (typeof $prefs !== 'undefined') {
+    $prefs.setValueForKey(str, storeKey);
+  } else if (typeof $storage !== 'undefined') {
+    $storage.set(storeKey, str);
+  }
+}
+
+// 全环境兼容通知，测试/Stash/Loon都能用
+function notify(title, body) {
+  if (typeof $notification !== 'undefined') {
+    $notification.post(scriptName, title, body);
+  } else if (typeof $notify !== 'undefined') {
+    $notify(scriptName, title, body);
+  }
+  console.log(`【${scriptName}】${title}\n${body}`);
 }
 
 function pickItem(arr, seed) {
@@ -230,10 +251,6 @@ function buildHeaders(capture, ua) {
   Object.keys(headers).forEach(k => { if (k.toLowerCase() === 'user-agent') delete headers[k]; });
   headers['User-Agent'] = ua;
   return headers;
-}
-
-function notify(title, body) {
-  $notify(scriptName, title, body);
 }
 
 function sleep(ms) {
