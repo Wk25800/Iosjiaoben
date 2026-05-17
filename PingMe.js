@@ -1,16 +1,19 @@
-const scriptName = 'PingMe';
+const scriptName = 'PingMe_5';
 const storeKey = 'pingme_accounts_v1';
+const panelKey = 'pingme_panel_data';
 const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
 const MAX_VIDEO = 5;
 const VIDEO_DELAY = 8000;
 const ACCOUNT_GAP = 3500;
 
+// 设备指纹库，用于生成唯一账号标识
 const IOS_VERSIONS = ['17.5.1','17.6.1','17.4.1','17.2.1','16.7.8','17.6','17.3.1','18.0.1','17.1.2','16.6.1'];
 const IOS_SCALES = ['2.00','3.00','3.00','2.00','3.00'];
 const IPHONE_MODELS = ['iPhone14,3','iPhone13,3','iPhone15,3','iPhone16,1','iPhone14,7','iPhone13,2','iPhone15,2','iPhone12,1'];
 const CFN_VERS = ['1410.0.3','1494.0.7','1568.100.1','1209.1','1474.0.4','1568.200.2'];
 const DARWIN_VERS = ['22.6.0','23.5.0','23.6.0','24.0.0','22.4.0'];
 
+// 原生MD5实现，无外部依赖，适配Stash环境
 function MD5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
   function AddUnsigned(lX, lY) {
@@ -84,18 +87,14 @@ function MD5(string) {
   return (WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d)).toLowerCase();
 }
 
+// 时间格式化
 function getUTCSignDate() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   return `${now.getUTCFullYear()}-${pad(now.getUTCMonth()+1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
 }
 
-function normalizeHeaderNameMap(headers) {
-  const out = {};
-  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
-  return out;
-}
-
+// URL参数解析
 function parseRawQuery(url) {
   const query = (url.split('?')[1] || '').split('#')[0];
   const rawMap = {};
@@ -110,13 +109,14 @@ function parseRawQuery(url) {
   return rawMap;
 }
 
+// 修复：账号指纹生成，唯一标识每个账号，不会重复
 function fingerprintOf(paramsRaw) {
-  const drop = { sign:1, signDate:1, timestamp:1, ts:1, nonce:1, random:1, reqTime:1, reqId:1, requestId:1 };
-  const base = Object.keys(paramsRaw || {}).filter(k => !drop[k]).sort().map(k => `${k}=${paramsRaw[k]}`).join('&');
-  return MD5(base).slice(0, 12);
+  // 用设备唯一ID生成指纹，每个账号唯一，不会重复
+  const uniqueId = paramsRaw.uniquedeviceid || paramsRaw.deviceId || paramsRaw.userId || String(Date.now());
+  return MD5(uniqueId).slice(0, 12);
 }
 
-// 兼容Stash/QLX存储API
+// 全环境兼容存储，Stash原生API适配
 function loadStore() {
   let raw = '{}';
   if (typeof $storage !== 'undefined') {
@@ -144,7 +144,36 @@ function saveStore(store) {
   }
 }
 
-// 多端通知兼容
+// 面板数据读写，适配Stash tiles原生更新
+function loadPanelData() {
+  let raw = '{}';
+  if (typeof $storage !== 'undefined') {
+    raw = $storage.get(panelKey);
+  } else if (typeof $prefs !== 'undefined') {
+    raw = $prefs.valueForKey(panelKey);
+  }
+  if (!raw) return { content: '等待首次运行...', updateTime: '' };
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return { content: '等待首次运行...', updateTime: '' };
+  }
+}
+
+function savePanelData(content) {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const updateTime = `${now.getMonth()+1}/${now.getDate()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const data = { content, updateTime };
+  const str = JSON.stringify(data);
+  if (typeof $storage !== 'undefined') {
+    $storage.set(panelKey, str);
+  } else if (typeof $prefs !== 'undefined') {
+    $prefs.setValueForKey(str, panelKey);
+  }
+}
+
+// 全环境兼容通知
 function notify(title, body) {
   if (typeof $notification !== 'undefined') {
     $notification.post(scriptName, title, body);
@@ -154,6 +183,7 @@ function notify(title, body) {
   console.log(`【${scriptName}】${title}\n${body}`);
 }
 
+// 工具函数
 function pickItem(arr, seed) {
   return arr[seed % arr.length];
 }
@@ -228,6 +258,7 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// 单账号签到逻辑
 function runAccount(acc, index, total) {
   const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
   const ua = buildUA(acc.baseUA, acc.uaSeed);
@@ -297,20 +328,20 @@ function runAccount(acc, index, total) {
   });
 }
 
+// 抓包入库逻辑
 if ($request) {
   const paramsRaw = parseRawQuery($request.url);
-  const headersMap = normalizeHeaderNameMap($request.headers);
+  const headersMap = cloneHeaders($request.headers);
   let baseUA = '';
-  Object.keys(headersMap).forEach(k => {
-    if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
-  });
+  Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
 
   const store = loadStore();
   const fp = fingerprintOf(paramsRaw);
   const now = Date.now();
   const existed = !!store.accounts[fp];
-  const uaSeed = existed ? store.accounts[fp].uaSeed : store.order.length;
+  // 修复：账号序号自动递增，每个新账号+1，不会永远是1
   const alias = existed ? store.accounts[fp].alias : `账号${store.order.length + 1}`;
+  const uaSeed = existed ? store.accounts[fp].uaSeed : store.order.length;
 
   store.accounts[fp] = {
     id: fp,
@@ -325,27 +356,40 @@ if ($request) {
   saveStore(store);
 
   const total = store.order.length;
+  const panelContent = `账号总数：${total}\n最后更新：${new Date().getMonth()+1}/${new Date().getDate()} ${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`;
+  savePanelData(panelContent);
+
   notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}\n账号总数：${total}`);
   $done({});
-} else {
+} 
+// 面板点击/定时触发签到逻辑
+else {
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
-    notify('⚠️ 暂无账号', '先打开APP抓包录入账号');
+    const panelContent = '暂无账号\n请先打开APP抓包录入';
+    savePanelData(panelContent);
+    notify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
     $done();
+  } else {
+    const total = ids.length;
+    const results = [];
+    let chain = Promise.resolve();
+    ids.forEach((id, idx) => {
+      chain = chain.then(() => runAccount(store.accounts[id], idx, total))
+        .then(text => { results.push(text); })
+        .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
+    });
+    chain.then(() => {
+      const panelContent = `账号总数：${total}\n签到完成：${new Date().getMonth()+1}/${new Date().getDate()} ${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`;
+      savePanelData(panelContent);
+      notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
+      $done();
+    }).catch(err => {
+      const panelContent = `签到异常\n${new Date().getMonth()+1}/${new Date().getDate()} ${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`;
+      savePanelData(panelContent);
+      notify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
+      $done();
+    });
   }
-  let results = [];
-  let taskChain = Promise.resolve();
-  ids.forEach((id, idx) => {
-    taskChain = taskChain.then(() => runAccount(store.accounts[id], idx, total))
-    .then(log => results.push(log))
-    .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
-  });
-  taskChain.then(() => {
-    notify('🎉 批量任务完成', results.join('\n——————\n'));
-    $done();
-  }).catch(err => {
-    notify('❌ 任务出错', String(err));
-    $done();
-  });
 }
