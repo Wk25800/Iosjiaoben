@@ -3,22 +3,7 @@ desc: 'PingMe多账号自动签到+刷金币'
 icon: 'https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1100.png'
 
 http:
-  mitm:
-    - api.pingmeapp.net
-
-  script:
-    - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
-      name: 'PingMe.签到.request'
-      type: request
-      timeout: 60
-
   script-providers:
     'PingMe.签到.request':
       url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
       interval: 86400
-
-cron:
-  script:
-    - name: 'PingMe.签到.request'
-      cron: 30 8,20 * * *
-      timeout: 120
