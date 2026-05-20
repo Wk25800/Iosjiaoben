@@ -116,8 +116,9 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
+// Surge 存储适配
 function loadStore() {
-  const raw = $prefs.valueForKey(storeKey);
+  const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 1, accounts: {}, order: [] };
   try {
     const obj = JSON.parse(raw);
@@ -130,7 +131,7 @@ function loadStore() {
 }
 
 function saveStore(store) {
-  $prefs.setValueForKey(JSON.stringify(store), storeKey);
+  $persistentStore.write(JSON.stringify(store), storeKey);
 }
 
 function pickItem(arr, seed) {
@@ -203,8 +204,9 @@ function buildHeaders(capture, ua) {
   return headers;
 }
 
+// Surge 通知
 function notify(title, body) {
-  $notify(scriptName, title, body);
+  $notification.post(scriptName, title, body);
 }
 
 function sleep(ms) {
@@ -220,7 +222,8 @@ function runAccount(acc, index, total) {
 
   function fetchApi(path, useFakeId) {
     const overrideId = useFakeId ? fakeDeviceId : null;
-    return $task.fetch({ url: buildUrl(path, acc.capture, overrideId), method: 'GET', headers });
+    const url = buildUrl(path, acc.capture, overrideId);
+    return $http.get({ url: url, headers: headers });
   }
 
   function doVideoLoop(count) {
@@ -280,7 +283,8 @@ function runAccount(acc, index, total) {
   });
 }
 
-if (typeof $request !== 'undefined' && $request) {
+// Surge 入口判断
+if ($request) {
   const paramsRaw = parseRawQuery($request.url);
   const headersMap = normalizeHeaderNameMap($request.headers || {});
   let baseUA = '';
@@ -307,7 +311,7 @@ if (typeof $request !== 'undefined' && $request) {
 
   const total = store.order.length;
   notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
-  console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}\n${JSON.stringify(store.accounts[fp], null, 2)}`);
+  console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}`);
   $done({});
 } else {
   const store = loadStore();
