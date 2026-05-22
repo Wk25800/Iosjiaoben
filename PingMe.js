@@ -1,19 +1,25 @@
-// PingMe Stash官方规范终极版 - 完全匹配官方API
-const SCRIPT_NAME = "PingMe";
-const STORE_KEY = "pingme_accounts_v2";
-const SECRET = "0fOiukQq7jXZV2GRi9LGlO";
+/**
+ * PingMe 签到脚本（适配 Surge）
+ * 配合模块：
+ * [Script]
+ * PingMe获取签到参数 = type=http-request, pattern=^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus, script-path=xxx.js
+ * PingMe = type=cron, cronexp=30 8,20 * * *, script-path=xxx.js
+ */
+
+const scriptName = 'PingMe';
+const storeKey = 'pingme_accounts_v1';
+const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
 const MAX_VIDEO = 5;
 const VIDEO_DELAY = 8000;
 const ACCOUNT_GAP = 3500;
 
-// 设备指纹库
 const IOS_VERSIONS = ['17.5.1','17.6.1','17.4.1','17.2.1','16.7.8','17.6','17.3.1','18.0.1','17.1.2','16.6.1'];
 const IOS_SCALES = ['2.00','3.00','3.00','2.00','3.00'];
 const IPHONE_MODELS = ['iPhone14,3','iPhone13,3','iPhone15,3','iPhone16,1','iPhone14,7','iPhone13,2','iPhone15,2','iPhone12,1'];
 const CFN_VERS = ['1410.0.3','1494.0.7','1568.100.1','1209.1','1474.0.4','1568.200.2'];
 const DARWIN_VERS = ['22.6.0','23.5.0','23.6.0','24.0.0','22.4.0'];
 
-// 原生MD5实现
+// MD5 实现保持不变
 function MD5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
   function AddUnsigned(lX, lY) {
@@ -87,14 +93,18 @@ function MD5(string) {
   return (WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d)).toLowerCase();
 }
 
-// 时间格式化
 function getUTCSignDate() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   return `${now.getUTCFullYear()}-${pad(now.getUTCMonth()+1)}-${pad(now.getUTCDate())} ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
 }
 
-// URL参数解析
+function normalizeHeaderNameMap(headers) {
+  const out = {};
+  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
+  return out;
+}
+
 function parseRawQuery(url) {
   const query = (url.split('?')[1] || '').split('#')[0];
   const rawMap = {};
@@ -109,19 +119,15 @@ function parseRawQuery(url) {
   return rawMap;
 }
 
-// 账号指纹生成
 function fingerprintOf(paramsRaw) {
   const drop = { sign:1, signDate:1, timestamp:1, ts:1, nonce:1, random:1, reqTime:1, reqId:1, requestId:1 };
   const base = Object.keys(paramsRaw || {}).filter(k => !drop[k]).sort().map(k => `${k}=${paramsRaw[k]}`).join('&');
   return MD5(base).slice(0, 12);
 }
 
-// ========== 官方规范：持久化存储读写 ==========
 function loadStore() {
-  let raw = "{}";
-  if (typeof $persistentStore !== "undefined") {
-    raw = $persistentStore.read(STORE_KEY) || "{}";
-  }
+  const raw = $persistentStore.read(storeKey);
+  if (!raw) return { version: 1, accounts: {}, order: [] };
   try {
     const obj = JSON.parse(raw);
     if (!obj.accounts) obj.accounts = {};
@@ -133,19 +139,9 @@ function loadStore() {
 }
 
 function saveStore(store) {
-  if (typeof $persistentStore !== "undefined") {
-    $persistentStore.write(JSON.stringify(store), STORE_KEY);
-  }
+  $persistentStore.write(JSON.stringify(store), storeKey);
 }
 
-// ========== 官方规范：通知推送 ==========
-function notify(title, body) {
-  if (typeof $notification !== "undefined") {
-    $notification.post(SCRIPT_NAME, title, body);
-  }
-}
-
-// 工具函数
 function pickItem(arr, seed) {
   return arr[seed % arr.length];
 }
@@ -216,11 +212,19 @@ function buildHeaders(capture, ua) {
   return headers;
 }
 
+function httpGet(url, headers) {
+  return new Promise((resolve, reject) => {
+    $httpClient.get(url, headers, (error, response, data) => {
+      if (error) reject(error);
+      else resolve({ status: response.status, headers: response.headers, body: data });
+    });
+  });
+}
+
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// 单账号签到逻辑
 function runAccount(acc, index, total) {
   const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
   const ua = buildUA(acc.baseUA, acc.uaSeed);
@@ -230,20 +234,7 @@ function runAccount(acc, index, total) {
 
   function fetchApi(path, useFakeId) {
     const overrideId = useFakeId ? fakeDeviceId : null;
-    // ========== 官方规范：HTTP请求 ==========
-    return new Promise((resolve, reject) => {
-      $httpClient.get({
-        url: buildUrl(path, acc.capture, overrideId),
-        method: 'GET',
-        headers: headers
-      }, (err, response, data) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve({ body: data });
-      });
-    });
+    return httpGet(buildUrl(path, acc.capture, overrideId), headers);
   }
 
   function doVideoLoop(count) {
@@ -303,12 +294,15 @@ function runAccount(acc, index, total) {
   });
 }
 
-// ========== 抓包入库逻辑 ==========
-if (typeof $request !== 'undefined' && $request) {
+// --- 脚本入口 ---
+if ($trigger === 'http-request') {
+  // 抓包存储账号信息
   const paramsRaw = parseRawQuery($request.url);
-  const headersMap = cloneHeaders($request.headers || {});
+  const headersMap = normalizeHeaderNameMap($request.headers || {});
   let baseUA = '';
-  Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
+  Object.keys(headersMap).forEach(k => {
+    if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
+  });
 
   const store = loadStore();
   const fp = fingerprintOf(paramsRaw);
@@ -330,17 +324,15 @@ if (typeof $request !== 'undefined' && $request) {
   saveStore(store);
 
   const total = store.order.length;
-  notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}\n当前账号总数：${total}`);
-  console.log(`【${SCRIPT_NAME}】${existed ? 'update' : 'add'} account ${fp}`);
-  // 官方规范：结束必须调用$done
+  $notification.post(scriptName, existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
+  console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}\n${JSON.stringify(store.accounts[fp], null, 2)}`);
   $done({});
-} 
-// ========== 面板点击/定时触发签到逻辑 ==========
-else {
+} else {
+  // 定时任务：执行所有账号签到
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
-    notify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
+    $notification.post(scriptName, '⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
     $done();
   } else {
     const total = ids.length;
@@ -352,10 +344,10 @@ else {
         .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
     });
     chain.then(() => {
-      notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
+      $notification.post(scriptName, `🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
       $done();
     }).catch(err => {
-      notify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
+      $notification.post(scriptName, '❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
       $done();
     });
   }
