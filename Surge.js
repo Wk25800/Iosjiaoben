@@ -116,7 +116,7 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
-// Surge 存储适配
+// Surge 本地存储适配
 function loadStore() {
   const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 1, accounts: {}, order: [] };
@@ -129,7 +129,6 @@ function loadStore() {
     return { version: 1, accounts: {}, order: [] };
   }
 }
-
 function saveStore(store) {
   $persistentStore.write(JSON.stringify(store), storeKey);
 }
@@ -204,7 +203,7 @@ function buildHeaders(capture, ua) {
   return headers;
 }
 
-// Surge 通知
+// Surge 通知接口
 function notify(title, body) {
   $notification.post(scriptName, title, body);
 }
@@ -213,77 +212,68 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-function runAccount(acc, index, total) {
+async function runAccount(acc, index, total) {
   const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
   const ua = buildUA(acc.baseUA, acc.uaSeed);
   const headers = buildHeaders(acc.capture, ua);
   const fakeDeviceId = genFakeDeviceId();
   const msgs = [tag];
 
-  function fetchApi(path, useFakeId) {
+  async function fetchApi(path, useFakeId) {
     const overrideId = useFakeId ? fakeDeviceId : null;
     const url = buildUrl(path, acc.capture, overrideId);
-    return $http.get({ url: url, headers: headers });
+    const res = await $http.get(url, {headers});
+    return res;
   }
 
-  function doVideoLoop(count) {
+  async function doVideoLoop(count) {
     let i = 0;
-    function next() {
-      if (i >= count) return Promise.resolve();
-      return new Promise(resolve => {
-        setTimeout(() => {
-          i++;
-          fetchApi('videoBonus', true).then(res => {
-            try {
-              const d = JSON.parse(res.body);
-              if (d.retcode === 0) {
-                msgs.push(`🎬 视频${i}：+${d.result?.bonus || '?'} Coins`);
-                resolve(next());
-              } else {
-                msgs.push(`⏸ 视频${i}：${d.retmsg}`);
-                resolve();
-              }
-            } catch (e) {
-              msgs.push(`❌ 视频${i}：解析失败`);
-              resolve();
-            }
-          }).catch(err => {
-            msgs.push(`❌ 视频${i}：${err.error || '请求失败'}`);
-            resolve();
-          });
-        }, i === 0 ? 1500 : VIDEO_DELAY);
-      });
+    while(i < count){
+      i++;
+      await sleep(i === 1 ? 1500 : VIDEO_DELAY);
+      const res = await fetchApi('videoBonus', true);
+      try {
+        const d = JSON.parse(res.body);
+        if (d.retcode === 0) {
+          msgs.push(`🎬 视频${i}：+${d.result?.bonus || '?'} Coins`);
+        } else {
+          msgs.push(`⏸ 视频${i}：${d.retmsg}`);
+        }
+      } catch (e) {
+        msgs.push(`❌ 视频${i}：解析失败`);
+      }
     }
-    return next();
   }
 
-  return fetchApi('queryBalanceAndBonus').then(res => {
+  try{
+    let res = await fetchApi('queryBalanceAndBonus');
     try {
       const d = JSON.parse(res.body);
       if (d.retcode === 0) msgs.push(`💰 余额：${d.result.balance} Coins`);
       else msgs.push(`⚠️ 查询：${d.retmsg}`);
     } catch (e) { msgs.push('❌ 查询：解析失败'); }
-    return fetchApi('checkIn');
-  }).then(res => {
+
+    res = await fetchApi('checkIn');
     try {
       const d = JSON.parse(res.body);
       if (d.retcode === 0) msgs.push(`✅ 签到：${(d.result?.bonusHint || d.retmsg || '').replace(/\n/g, ' ')}`);
       else msgs.push(`⚠️ 签到：${d.retmsg}`);
     } catch (e) { msgs.push('❌ 签到：解析失败'); }
-    return doVideoLoop(MAX_VIDEO);
-  }).then(() => fetchApi('queryBalanceAndBonus')).then(res => {
+
+    await doVideoLoop(MAX_VIDEO);
+
+    res = await fetchApi('queryBalanceAndBonus');
     try {
       const d = JSON.parse(res.body);
       if (d.retcode === 0) msgs.push(`💰 最新余额：${d.result.balance} Coins`);
     } catch (e) {}
-    return msgs.join('\n');
-  }).catch(err => {
-    msgs.push(`❌ 异常：${err.error || String(err)}`);
-    return msgs.join('\n');
-  });
+  }catch(err){
+    msgs.push(`❌ 异常：${err.message || String(err)}`);
+  }
+  return msgs.join('\n');
 }
 
-// Surge 入口判断
+// HTTP 请求捕获入口
 if ($request) {
   const paramsRaw = parseRawQuery($request.url);
   const headersMap = normalizeHeaderNameMap($request.headers || {});
@@ -311,29 +301,26 @@ if ($request) {
 
   const total = store.order.length;
   notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
-  console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}`);
   $done({});
-} else {
-  const store = loadStore();
-  const ids = store.order.filter(id => store.accounts[id]);
-  if (!ids.length) {
-    notify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
-    $done();
-  } else {
+}
+// 定时任务执行入口
+else {
+  (async ()=>{
+    const store = loadStore();
+    const ids = store.order.filter(id => store.accounts[id]);
+    if (!ids.length) {
+      notify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
+      $done();
+      return;
+    }
     const total = ids.length;
     const results = [];
-    let chain = Promise.resolve();
-    ids.forEach((id, idx) => {
-      chain = chain.then(() => runAccount(store.accounts[id], idx, total))
-        .then(text => { results.push(text); })
-        .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
-    });
-    chain.then(() => {
-      notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
-      $done();
-    }).catch(err => {
-      notify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
-      $done();
-    });
-  }
+    for(let idx=0;idx<ids.length;idx++){
+      const text = await runAccount(store.accounts[ids[idx]], idx, total);
+      results.push(text);
+      if(idx < ids.length - 1) await sleep(ACCOUNT_GAP);
+    }
+    notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
+    $done();
+  })();
 }
