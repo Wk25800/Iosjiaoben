@@ -10,6 +10,7 @@ const IPHONE_MODELS = ['iPhone14,3','iPhone13,3','iPhone15,3','iPhone16,1','iPho
 const CFN_VERS = ['1410.0.3','1494.0.7','1568.100.1','1209.1','1474.0.4','1568.200.2'];
 const DARWIN_VERS = ['22.6.0','23.5.0','23.6.0','24.0.0','22.4.0'];
 
+// MD5加密（保留原逻辑，无修改）
 function MD5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
   function AddUnsigned(lX, lY) {
@@ -83,6 +84,7 @@ function MD5(string) {
   return (WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d)).toLowerCase();
 }
 
+// 工具函数
 function getUTCSignDate() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -115,8 +117,9 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
+// ✅ 修复：Surge 原生持久化存储（替换QX的$prefs）
 function loadStore() {
-  const raw = $prefs.valueForKey(storeKey);
+  const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 1, accounts: {}, order: [] };
   try {
     const obj = JSON.parse(raw);
@@ -129,7 +132,7 @@ function loadStore() {
 }
 
 function saveStore(store) {
-  $prefs.setValueForKey(JSON.stringify(store), storeKey);
+  $persistentStore.write(JSON.stringify(store), storeKey);
 }
 
 function pickItem(arr, seed) {
@@ -202,130 +205,125 @@ function buildHeaders(capture, ua) {
   return headers;
 }
 
+// ✅ 修复：Surge 原生通知（替换QX的$notify）
 function notify(title, body) {
-  $notify(scriptName, title, body);
+  $notification.post(scriptName, title, body);
 }
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-function runAccount(acc, index, total) {
-  const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
+// ✅ 修复：Surge 原生网络请求（替换QX的$task.fetch）
+function fetchApi(path, acc, useFakeId) {
+  const fakeDeviceId = genFakeDeviceId();
+  const overrideId = useFakeId ? fakeDeviceId : null;
+  const url = buildUrl(path, acc.capture, overrideId);
   const ua = buildUA(acc.baseUA, acc.uaSeed);
   const headers = buildHeaders(acc.capture, ua);
-  const fakeDeviceId = genFakeDeviceId();
+  return $http.get(url, { headers: headers });
+}
+
+// 账号签到执行逻辑
+async function runAccount(acc, index, total) {
+  const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
   const msgs = [tag];
-  function fetchApi(path, useFakeId) {
-    const overrideId = useFakeId ? fakeDeviceId : null;
-    return $task.fetch({ url: buildUrl(path, acc.capture, overrideId), method: 'GET', headers });
-  }
-  function doVideoLoop(count) {
-    let i = 0;
-    function next() {
-      if (i >= count) return Promise.resolve();
-      return new Promise(resolve => {
-        setTimeout(() => {
-          i++;
-          fetchApi('videoBonus', true).then(res => {
-            try {
-              const d = JSON.parse(res.body);
-              if (d.retcode === 0) {
-                msgs.push(`🎬 视频${i}：+${d.result?.bonus || '?'} Coins`);
-                resolve(next());
-              } else {
-                msgs.push(`⏸ 视频${i}：${d.retmsg}`);
-                resolve();
-              }
-            } catch (e) {
-              msgs.push(`❌ 视频${i}：解析失败`);
-              resolve();
-            }
-          }).catch(err => {
-            msgs.push(`❌ 视频${i}：${err.error || '请求失败'}`);
-            resolve();
-          });
-        }, i === 0 ? 1500 : VIDEO_DELAY);
-      });
-    }
-    return next();
-  }
-  return fetchApi('queryBalanceAndBonus').then(res => {
+  try {
+    // 查询初始余额
+    let res = await fetchApi('queryBalanceAndBonus', acc, false);
     try {
       const d = JSON.parse(res.body);
       if (d.retcode === 0) msgs.push(`💰 余额：${d.result.balance} Coins`);
       else msgs.push(`⚠️ 查询：${d.retmsg}`);
     } catch (e) { msgs.push('❌ 查询：解析失败'); }
-    return fetchApi('checkIn');
-  }).then(res => {
+
+    // 执行签到
+    res = await fetchApi('checkIn', acc, false);
     try {
       const d = JSON.parse(res.body);
       if (d.retcode === 0) msgs.push(`✅ 签到：${(d.result?.bonusHint || d.retmsg || '').replace(/\n/g, ' ')}`);
       else msgs.push(`⚠️ 签到：${d.retmsg}`);
     } catch (e) { msgs.push('❌ 签到：解析失败'); }
-    return doVideoLoop(MAX_VIDEO);
-  }).then(() => fetchApi('queryBalanceAndBonus')).then(res => {
+
+    // 视频奖励循环
+    for (let i = 1; i <= MAX_VIDEO; i++) {
+      await sleep(i === 1 ? 1500 : VIDEO_DELAY);
+      const videoRes = await fetchApi('videoBonus', acc, true);
+      try {
+        const d = JSON.parse(videoRes.body);
+        if (d.retcode === 0) {
+          msgs.push(`🎬 视频${i}：+${d.result?.bonus || '?'} Coins`);
+        } else {
+          msgs.push(`⏸ 视频${i}：${d.retmsg}`);
+        }
+      } catch (e) {
+        msgs.push(`❌ 视频${i}：解析失败`);
+      }
+    }
+
+    // 查询最终余额
+    res = await fetchApi('queryBalanceAndBonus', acc, false);
     try {
       const d = JSON.parse(res.body);
       if (d.retcode === 0) msgs.push(`💰 最新余额：${d.result.balance} Coins`);
     } catch (e) {}
-    return msgs.join('\n');
-  }).catch(err => {
-    msgs.push(`❌ 异常：${err.error || String(err)}`);
-    return msgs.join('\n');
-  });
+  } catch (err) {
+    msgs.push(`❌ 异常：${err.message || String(err)}`);
+  }
+  return msgs.join('\n');
 }
 
-// 抓包入库逻辑
-if (typeof $request !== 'undefined' && $request) {
-  const paramsRaw = parseRawQuery($request.url);
-  const headersMap = normalizeHeaderNameMap($request.headers || {});
-  let baseUA = '';
-  Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
-  const store = loadStore();
-  const fp = fingerprintOf(paramsRaw);
-  const now = Date.now();
-  const existed = !!store.accounts[fp];
-  const uaSeed = existed ? store.accounts[fp].uaSeed : store.order.length;
-  const alias = existed ? store.accounts[fp].alias : `账号${store.order.length + 1}`;
-  store.accounts[fp] = {
-    id: fp,
-    alias,
-    uaSeed,
-    baseUA,
-    capture: { url: $request.url, paramsRaw, headers: headersMap },
-    createdAt: existed ? store.accounts[fp].createdAt : now,
-    updatedAt: now
-  };
-  if (!existed) store.order.push(fp);
-  saveStore(store);
-  const total = store.order.length;
-  notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
-  console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}\n${JSON.stringify(store.accounts[fp], null, 2)}`);
-  $done({});
-}
-// 手动/定时执行签到逻辑
-else {
-  const store = loadStore();
-  const ids = store.order.filter(id => store.accounts[id]);
-  if (!ids.length) {
-    notify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
-    $done();
-  } else {
+// 主逻辑入口
+(async () => {
+  // HTTP请求触发：抓包入库
+  if (typeof $request !== 'undefined' && $request) {
+    const paramsRaw = parseRawQuery($request.url);
+    const headersMap = normalizeHeaderNameMap($request.headers || {});
+    let baseUA = '';
+    Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
+
+    const store = loadStore();
+    const fp = fingerprintOf(paramsRaw);
+    const now = Date.now();
+    const existed = !!store.accounts[fp];
+    const uaSeed = existed ? store.accounts[fp].uaSeed : store.order.length;
+    const alias = existed ? store.accounts[fp].alias : `账号${store.order.length + 1}`;
+
+    store.accounts[fp] = {
+      id: fp,
+      alias,
+      uaSeed,
+      baseUA,
+      capture: { url: $request.url, paramsRaw, headers: headersMap },
+      createdAt: existed ? store.accounts[fp].createdAt : now,
+      updatedAt: now
+    };
+    if (!existed) store.order.push(fp);
+    saveStore(store);
+
+    const total = store.order.length;
+    notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
+    $done({});
+  }
+  // 手动/定时触发：执行签到
+  else {
+    const store = loadStore();
+    const ids = store.order.filter(id => store.accounts[id]);
+    if (!ids.length) {
+      notify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
+      $done();
+      return;
+    }
+
     const total = ids.length;
     const results = [];
-    let chain = Promise.resolve();
-    ids.forEach((id, idx) => {
-      chain = chain.then(() => runAccount(store.accounts[id], idx, total))
-      .then(text => { results.push(text); })
-      .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
-    });
-    chain.then(() => {
-      notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
-      $done();
-    }).catch(err => {
-      notify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
-      $done();
-    });
+    for (let idx = 0; idx < ids.length; idx++) {
+      const text = await runAccount(store.accounts[ids[idx]], idx, total);
+      results.push(text);
+      if (idx < ids.length - 1) await sleep(ACCOUNT_GAP);
+    }
+
+    notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
+    $done();
   }
-}
+})();
