@@ -128,6 +128,12 @@ function parseRawQuery(url) {
   return rawMap;
 }
 
+function isValidCapture(url, paramsRaw) {
+  if (!url || url.indexOf('pingmeapp.net/app/') === -1) return false;
+  if (!paramsRaw || !paramsRaw.sign) return false;
+  return true;
+}
+
 function fingerprintOf(paramsRaw) {
   const drop = { sign:1, signDate:1, timestamp:1, ts:1, nonce:1, random:1, reqTime:1, reqId:1, requestId:1 };
   const base = Object.keys(paramsRaw || {}).filter(k => !drop[k]).sort().map(k => `${k}=${paramsRaw[k]}`).join('&');
@@ -137,15 +143,37 @@ function fingerprintOf(paramsRaw) {
 // ─── 持久化存储 ──────────────────────────────────────────────────────────────
 function loadStore() {
   const raw = $persistentStore.read(storeKey);
-  if (!raw) return { version: 1, accounts: {}, order: [] };
-  try {
-    const obj = JSON.parse(raw);
-    if (!obj.accounts) obj.accounts = {};
-    if (!Array.isArray(obj.order)) obj.order = Object.keys(obj.accounts);
-    return obj;
-  } catch (e) {
-    return { version: 1, accounts: {}, order: [] };
+  let store;
+  if (!raw) {
+    store = { version: 1, accounts: {}, order: [] };
+  } else {
+    try {
+      const obj = JSON.parse(raw);
+      store = obj;
+      if (!store.accounts) store.accounts = {};
+      if (!Array.isArray(store.order)) store.order = Object.keys(store.accounts);
+    } catch (e) {
+      store = { version: 1, accounts: {}, order: [] };
+    }
   }
+
+  // 自愈：清理掉非 PingMe 的无效抓包记录（例如 apple.com 连通性检测）
+  let changed = false;
+  Object.keys(store.accounts).forEach(id => {
+    const acc = store.accounts[id];
+    const url = acc && acc.capture && acc.capture.url;
+    const paramsRaw = acc && acc.capture && acc.capture.paramsRaw;
+    if (!isValidCapture(url, paramsRaw)) {
+      delete store.accounts[id];
+      changed = true;
+    }
+  });
+  if (changed) {
+    store.order = store.order.filter(id => store.accounts[id]);
+    $persistentStore.write(JSON.stringify(store), storeKey);
+  }
+
+  return store;
 }
 
 function saveStore(store) {
@@ -464,6 +492,12 @@ function runAccount(acc, index, total) {
 if (typeof $request !== 'undefined' && $request) {
   // ── 抓包模式 ──────────────────────────────────────────────────────────────
   const paramsRaw = parseRawQuery($request.url);
+
+  if (!isValidCapture($request.url, paramsRaw)) {
+    console.log(`【${scriptName}】忽略无关请求：${$request.url}`);
+    $done({});
+  } else {
+
   const headersMap = normalizeHeaderNameMap($request.headers || {});
   let baseUA = '';
   Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
@@ -493,6 +527,7 @@ if (typeof $request !== 'undefined' && $request) {
   notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${accountDisplayName(store.accounts[fp])}（id:${fp}）\n当前账号总数：${total}`);
   console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}\n${JSON.stringify(store.accounts[fp], null, 2)}`);
   $done({});
+  }
 
 } else {
   // ── 定时任务模式 ──────────────────────────────────────────────────────────
