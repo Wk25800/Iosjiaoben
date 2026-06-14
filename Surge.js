@@ -1,8 +1,15 @@
-//2026/06/03/10/41
 /*
-#!name=PingMe-Surge适配版
-#!desc=PingMe 自动化签到+视频奖励(Surge专用)
-#!author=怎么肥事 适配Surge
+#!name=PingMe自动签到
+#!desc=PingMe 自动化签到+视频奖励 (Surge适配版)
+#!author=怎么肥事 (Surge适配)
+
+配套模块 [Script] 部分：
+
+PingMe获取签到参数 = type=http-request, pattern=^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus, script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/Surge.js, timeout=60
+PingMe签到 = type=cron,cronexp="30 8,20 * * *",script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/Surge.js,timeout=300,script-update-interval=0
+
+[MITM]
+hostname = api.pingmeapp.net
 */
 
 const scriptName = 'PingMe';
@@ -20,6 +27,7 @@ const DARWIN_VERS = ['22.6.0','23.5.0','23.6.0','24.0.0','22.4.0'];
 const USER_NAME_KEYS = ['email','username','userName','nickname','nickName','name','displayName','accountName','account','phone','mobile','mail','login','loginName','user','uid'];
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
+// ─── MD5 ────────────────────────────────────────────────────────────────────
 function MD5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
   function AddUnsigned(lX, lY) {
@@ -93,6 +101,7 @@ function MD5(string) {
   return (WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d)).toLowerCase();
 }
 
+// ─── 工具函数 ────────────────────────────────────────────────────────────────
 function getUTCSignDate() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -125,6 +134,7 @@ function fingerprintOf(paramsRaw) {
   return MD5(base).slice(0, 12);
 }
 
+// ─── 持久化存储 ──────────────────────────────────────────────────────────────
 function loadStore() {
   const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 1, accounts: {}, order: [] };
@@ -142,6 +152,7 @@ function saveStore(store) {
   $persistentStore.write(JSON.stringify(store), storeKey);
 }
 
+// ─── UA / 设备伪造 ───────────────────────────────────────────────────────────
 function pickItem(arr, seed) {
   return arr[seed % arr.length];
 }
@@ -165,6 +176,23 @@ function buildUA(baseUA, seed) {
   return `PingMe/1.0.0 (${model}; iOS ${iosVer}; Scale/${scale}) CFNetwork/${cfn} Darwin/${darwin}`;
 }
 
+function randHex(n) {
+  let s = '';
+  for (let i = 0; i < n; i++) s += Math.floor(Math.random() * 16).toString(16);
+  return s.toUpperCase();
+}
+
+function genFakeDeviceId() {
+  return `${randHex(8)}-${randHex(4)}-${randHex(4)}-${randHex(4)}-${randHex(12)}PingMeIOS`;
+}
+
+function cloneHeaders(headers) {
+  const out = {};
+  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
+  return out;
+}
+
+// ─── 签名 / URL 构建 ─────────────────────────────────────────────────────────
 function buildSignedParamsRaw(capture, overrideDeviceId) {
   const params = {};
   Object.keys(capture.paramsRaw || {}).forEach(k => {
@@ -185,22 +213,6 @@ function buildUrl(path, capture, overrideDeviceId) {
   return `https://api.pingmeapp.net/app/${path}?${qs}`;
 }
 
-function randHex(n) {
-  let s = '';
-  for (let i = 0; i < n; i++) s += Math.floor(Math.random() * 16).toString(16);
-  return s.toUpperCase();
-}
-
-function genFakeDeviceId() {
-  return `${randHex(8)}-${randHex(4)}-${randHex(4)}-${randHex(4)}-${randHex(12)}PingMeIOS`;
-}
-
-function cloneHeaders(headers) {
-  const out = {};
-  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
-  return out;
-}
-
 function buildHeaders(capture, ua) {
   const headers = cloneHeaders(capture.headers || {});
   delete headers['Content-Length']; delete headers['content-length'];
@@ -216,16 +228,17 @@ function buildHeaders(capture, ua) {
   return headers;
 }
 
-// ==========【Surge适配修改1：通知函数】==========
+// ─── 通知 / sleep ────────────────────────────────────────────────────────────
 function notify(title, body) {
   console.log(`【${scriptName}通知】${title}\n${body}`);
-  $notify(scriptName, title, body);
+  $notification.post(scriptName, title, body);
 }
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// ─── 用户名识别 ──────────────────────────────────────────────────────────────
 function normalizeUserName(value) {
   if (value === null || typeof value === 'undefined') return '';
   let name = String(value).trim();
@@ -304,7 +317,8 @@ function accountDisplayName(acc) {
   return userName ? `${alias}：${userName}` : `${alias}：未识别`;
 }
 
-function sanitizeLoonHeaders(headers) {
+// ─── HTTP 请求（Surge: $httpClient）─────────────────────────────────────────
+function sanitizeHeaders(headers) {
   const out = {};
   Object.keys(headers || {}).forEach(k => {
     const lk = k.toLowerCase();
@@ -315,13 +329,12 @@ function sanitizeLoonHeaders(headers) {
   return out;
 }
 
-// ==========【Surge适配修改2：网络请求函数】==========
-function loonFetch(request) {
+function surgeFetch(request) {
   return new Promise((resolve, reject) => {
     const options = {
       url: request.url,
-      headers: sanitizeLoonHeaders(request.headers || {}),
-      timeout: 60000
+      headers: sanitizeHeaders(request.headers || {}),
+      timeout: 60
     };
     if (request.body) options.body = request.body;
     const callback = (error, response, data) => {
@@ -330,13 +343,12 @@ function loonFetch(request) {
         return;
       }
       resolve({
-        statusCode: response?.statusCode || response?.status || 0,
-        headers: response?.headers,
+        statusCode: response && (response.status || response.statusCode),
+        headers: response && response.headers,
         body: data
       });
     };
-    const method = (request.method || 'GET').toUpperCase();
-    if (method === 'POST') {
+    if ((request.method || 'GET').toUpperCase() === 'POST') {
       $httpClient.post(options, callback);
     } else {
       $httpClient.get(options, callback);
@@ -344,10 +356,10 @@ function loonFetch(request) {
   });
 }
 
+// ─── 单账号任务 ──────────────────────────────────────────────────────────────
 function runAccount(acc, index, total) {
   let oldUserName = normalizeUserName(acc.userName);
   updateAccountUserNameFromCapture(acc);
-//  logUserNameChange(acc, oldUserName, index, total, '抓包信息');
   const tag = accountTitle(acc, index, total);
   const ua = buildUA(acc.baseUA, acc.uaSeed);
   const headers = buildHeaders(acc.capture, ua);
@@ -362,7 +374,7 @@ function runAccount(acc, index, total) {
     const overrideId = useFakeId ? fakeDeviceId : null;
     const attempt = (n) => {
       console.log(`【${scriptName}】${accountTitle(acc, index, total)} 请求 ${path}，第${n}次`);
-      return loonFetch({ url: buildUrl(path, acc.capture, overrideId), method: 'GET', headers })
+      return surgeFetch({ url: buildUrl(path, acc.capture, overrideId), method: 'GET', headers })
       .then(res => {
         console.log(`【${scriptName}】${accountTitle(acc, index, total)} 请求 ${path} 完成，状态码：${res.statusCode || '未知'}`);
         return res;
@@ -448,7 +460,9 @@ function runAccount(acc, index, total) {
   });
 }
 
+// ─── 主逻辑：抓包 or 定时任务 ────────────────────────────────────────────────
 if (typeof $request !== 'undefined' && $request) {
+  // ── 抓包模式 ──────────────────────────────────────────────────────────────
   const paramsRaw = parseRawQuery($request.url);
   const headersMap = normalizeHeaderNameMap($request.headers || {});
   let baseUA = '';
@@ -479,7 +493,9 @@ if (typeof $request !== 'undefined' && $request) {
   notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${accountDisplayName(store.accounts[fp])}（id:${fp}）\n当前账号总数：${total}`);
   console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}\n${JSON.stringify(store.accounts[fp], null, 2)}`);
   $done({});
+
 } else {
+  // ── 定时任务模式 ──────────────────────────────────────────────────────────
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
