@@ -1,25 +1,60 @@
-/**
- * PingMe 签到脚本（适配 Surge）
- * 配合模块：
- * [Script]
- * PingMe获取签到参数 = type=http-request, pattern=^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus, script-path=xxx.js
- * PingMe = type=cron, cronexp=30 8,20 * * *, script-path=xxx.js
- */
+/*
+#!name=PingMe自动签到
+#!desc=PingMe 自动化签到+视频奖励 (Stash适配版)
+#!author=怎么肥事 (Stash适配)
+#!category=Utility
+
+==== Stash 模块配置（.stoverride）说明 ====
+
+[Script]
+http-request https://api.pingmeapp.net/app/queryBalanceAndBonus script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/Stash.js, tag=PingMe获取签到参数, requires-body=false, timeout=60
+cron "30 8,20 * * *" script-path=https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/Stash.js, tag=PingMe签到, timeout=300
+
+[MITM]
+hostname = %APPEND% api.pingmeapp.net
+
+使用说明：
+1. 把以上 [Script] 和 [MITM] 内容加到你的 Stash 覆写(override)文件中，
+   或新建一个 .stoverride 文件，把上面内容整体粘贴进去
+2. 在 Stash App -> 覆写(Override) -> 添加该覆写并启用
+3. 确保 Stash 的 MitM 总开关已开启，且证书已安装并信任
+4. 打开 PingMe App 进入首页触发抓包
+5. 等待 8:30 / 20:30 自动签到，或在 Stash 的"模块/脚本"管理里手动测试
+
+注意：Stash 的脚本类型写法是 "http-request <匹配条件> script-path=..., tag=..., ..."
+跟 Surge 的 "标签名 = type=http-request, pattern=..., script-path=..." 写法不同，
+请使用上面这种 Stash 风格的写法，不要直接照抄 Surge 的 [Script] 配置。
+*/
+
 
 const scriptName = 'PingMe';
 const storeKey = 'pingme_accounts_v1';
 const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
 const MAX_VIDEO = 5;
-const VIDEO_DELAY = 8000;
-const ACCOUNT_GAP = 3500;
+const VIDEO_DELAY_MIN = 6000;   // 视频间隔最小值(ms)
+const VIDEO_DELAY_MAX = 13000;  // 视频间隔最大值(ms)
+const ACCOUNT_GAP_MIN = 3000;   // 账号间隔最小值(ms)
+const ACCOUNT_GAP_MAX = 8000;   // 账号间隔最大值(ms)
+const CAPTCHA_KEYWORDS = ['图形验证码', '验证码', 'captcha'];
+
+function randomDelay(min, max) {
+  return Math.floor(min + Math.random() * (max - min));
+}
+
+function isCaptchaResponse(d) {
+  const text = (d && (d.retmsg || '')) + '';
+  return CAPTCHA_KEYWORDS.some(k => text.indexOf(k) !== -1);
+}
 
 const IOS_VERSIONS = ['17.5.1','17.6.1','17.4.1','17.2.1','16.7.8','17.6','17.3.1','18.0.1','17.1.2','16.6.1'];
 const IOS_SCALES = ['2.00','3.00','3.00','2.00','3.00'];
 const IPHONE_MODELS = ['iPhone14,3','iPhone13,3','iPhone15,3','iPhone16,1','iPhone14,7','iPhone13,2','iPhone15,2','iPhone12,1'];
 const CFN_VERS = ['1410.0.3','1494.0.7','1568.100.1','1209.1','1474.0.4','1568.200.2'];
 const DARWIN_VERS = ['22.6.0','23.5.0','23.6.0','24.0.0','22.4.0'];
+const USER_NAME_KEYS = ['email','username','userName','nickname','nickName','name','displayName','accountName','account','phone','mobile','mail','login','loginName','user','uid'];
+const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
-// MD5 实现保持不变
+// ─── MD5 ────────────────────────────────────────────────────────────────────
 function MD5(string) {
   function RotateLeft(lValue, iShiftBits) { return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits)); }
   function AddUnsigned(lX, lY) {
@@ -93,6 +128,7 @@ function MD5(string) {
   return (WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d)).toLowerCase();
 }
 
+// ─── 工具函数 ────────────────────────────────────────────────────────────────
 function getUTCSignDate() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -119,29 +155,59 @@ function parseRawQuery(url) {
   return rawMap;
 }
 
+function isValidCapture(url, paramsRaw) {
+  if (!url || url.indexOf('pingmeapp.net/app/') === -1) return false;
+  if (!paramsRaw || !paramsRaw.sign) return false;
+  return true;
+}
+
 function fingerprintOf(paramsRaw) {
   const drop = { sign:1, signDate:1, timestamp:1, ts:1, nonce:1, random:1, reqTime:1, reqId:1, requestId:1 };
   const base = Object.keys(paramsRaw || {}).filter(k => !drop[k]).sort().map(k => `${k}=${paramsRaw[k]}`).join('&');
   return MD5(base).slice(0, 12);
 }
 
+// ─── 持久化存储 ──────────────────────────────────────────────────────────────
 function loadStore() {
   const raw = $persistentStore.read(storeKey);
-  if (!raw) return { version: 1, accounts: {}, order: [] };
-  try {
-    const obj = JSON.parse(raw);
-    if (!obj.accounts) obj.accounts = {};
-    if (!Array.isArray(obj.order)) obj.order = Object.keys(obj.accounts);
-    return obj;
-  } catch (e) {
-    return { version: 1, accounts: {}, order: [] };
+  let store;
+  if (!raw) {
+    store = { version: 1, accounts: {}, order: [] };
+  } else {
+    try {
+      const obj = JSON.parse(raw);
+      store = obj;
+      if (!store.accounts) store.accounts = {};
+      if (!Array.isArray(store.order)) store.order = Object.keys(store.accounts);
+    } catch (e) {
+      store = { version: 1, accounts: {}, order: [] };
+    }
   }
+
+  // 自愈：清理掉非 PingMe 的无效抓包记录（例如 apple.com 连通性检测）
+  let changed = false;
+  Object.keys(store.accounts).forEach(id => {
+    const acc = store.accounts[id];
+    const url = acc && acc.capture && acc.capture.url;
+    const paramsRaw = acc && acc.capture && acc.capture.paramsRaw;
+    if (!isValidCapture(url, paramsRaw)) {
+      delete store.accounts[id];
+      changed = true;
+    }
+  });
+  if (changed) {
+    store.order = store.order.filter(id => store.accounts[id]);
+    $persistentStore.write(JSON.stringify(store), storeKey);
+  }
+
+  return store;
 }
 
 function saveStore(store) {
   $persistentStore.write(JSON.stringify(store), storeKey);
 }
 
+// ─── UA / 设备伪造 ───────────────────────────────────────────────────────────
 function pickItem(arr, seed) {
   return arr[seed % arr.length];
 }
@@ -165,6 +231,23 @@ function buildUA(baseUA, seed) {
   return `PingMe/1.0.0 (${model}; iOS ${iosVer}; Scale/${scale}) CFNetwork/${cfn} Darwin/${darwin}`;
 }
 
+function randHex(n) {
+  let s = '';
+  for (let i = 0; i < n; i++) s += Math.floor(Math.random() * 16).toString(16);
+  return s.toUpperCase();
+}
+
+function genFakeDeviceId() {
+  return `${randHex(8)}-${randHex(4)}-${randHex(4)}-${randHex(4)}-${randHex(12)}PingMeIOS`;
+}
+
+function cloneHeaders(headers) {
+  const out = {};
+  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
+  return out;
+}
+
+// ─── 签名 / URL 构建 ─────────────────────────────────────────────────────────
 function buildSignedParamsRaw(capture, overrideDeviceId) {
   const params = {};
   Object.keys(capture.paramsRaw || {}).forEach(k => {
@@ -185,56 +268,182 @@ function buildUrl(path, capture, overrideDeviceId) {
   return `https://api.pingmeapp.net/app/${path}?${qs}`;
 }
 
-function randHex(n) {
-  let s = '';
-  for (let i = 0; i < n; i++) s += Math.floor(Math.random() * 16).toString(16);
-  return s.toUpperCase();
-}
-
-function genFakeDeviceId() {
-  return `${randHex(8)}-${randHex(4)}-${randHex(4)}-${randHex(4)}-${randHex(12)}PingMeIOS`;
-}
-
-function cloneHeaders(headers) {
-  const out = {};
-  Object.keys(headers || {}).forEach(k => out[k] = headers[k]);
-  return out;
-}
-
 function buildHeaders(capture, ua) {
   const headers = cloneHeaders(capture.headers || {});
   delete headers['Content-Length']; delete headers['content-length'];
   delete headers[':authority']; delete headers[':method']; delete headers[':path']; delete headers[':scheme'];
   headers['Host'] = 'api.pingmeapp.net';
   headers['Accept'] = headers['Accept'] || 'application/json';
-  Object.keys(headers).forEach(k => { if (k.toLowerCase() === 'user-agent') delete headers[k]; });
+  Object.keys(headers).forEach(k => {
+    const lk = k.toLowerCase();
+    if (lk === 'user-agent' || lk === 'connection' || lk === 'proxy-connection' || lk === 'keep-alive') delete headers[k];
+  });
   headers['User-Agent'] = ua;
+  headers['Connection'] = 'close';
   return headers;
 }
 
-function httpGet(url, headers) {
-  return new Promise((resolve, reject) => {
-    $httpClient.get(url, headers, (error, response, data) => {
-      if (error) reject(error);
-      else resolve({ status: response.status, headers: response.headers, body: data });
-    });
-  });
+// ─── 通知 / sleep ────────────────────────────────────────────────────────────
+function notify(title, body) {
+  console.log(`【${scriptName}通知】${title}\n${body}`);
+  $notification.post(scriptName, title, body);
 }
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// ─── 用户名识别 ──────────────────────────────────────────────────────────────
+function normalizeUserName(value) {
+  if (value === null || typeof value === 'undefined') return '';
+  let name = String(value).trim();
+  try {
+    name = decodeURIComponent(name);
+  } catch (e) {}
+  if (!name || name === 'null' || name === 'undefined' || name === '0') return '';
+  const email = name.match(EMAIL_RE);
+  if (email) return email[0];
+  return name.replace(/\s+/g, ' ');
+}
+
+function pickUserNameFromObject(obj) {
+  const queue = [obj];
+  const seen = [];
+  let scanned = 0;
+  let emailCandidate = '';
+  while (queue.length && scanned < 120) {
+    const cur = queue.shift();
+    scanned++;
+    if (!cur || typeof cur !== 'object') continue;
+    if (seen.indexOf(cur) >= 0) continue;
+    seen.push(cur);
+
+    for (let i = 0; i < USER_NAME_KEYS.length; i++) {
+      const key = USER_NAME_KEYS[i];
+      const direct = normalizeUserName(cur[key]);
+      if (direct) return direct;
+    }
+
+    Object.keys(cur).forEach(key => {
+      const value = cur[key];
+      if (value && typeof value === 'object') queue.push(value);
+      else if (!emailCandidate) {
+        const text = normalizeUserName(value);
+        if (EMAIL_RE.test(text)) emailCandidate = text.match(EMAIL_RE)[0];
+      }
+    });
+  }
+  return emailCandidate;
+}
+
+function updateAccountUserName(acc, data) {
+  const userName = pickUserNameFromObject(data);
+  if (userName) acc.userName = userName;
+  return acc.userName || '';
+}
+
+function updateAccountUserNameFromCapture(acc) {
+  const capture = acc.capture || {};
+  const userName = pickUserNameFromObject({
+    paramsRaw: capture.paramsRaw || {},
+    headers: capture.headers || {},
+    url: capture.url || ''
+  });
+  if (userName) acc.userName = userName;
+  return acc.userName || '';
+}
+
+function logUserNameChange(acc, oldName, index, total, source) {
+  const newName = normalizeUserName(acc.userName);
+  if (newName && newName !== oldName) {
+    console.log(`【${scriptName}】${accountTitle(acc, index, total)} 从 ${source} 识别到用户名：${newName}`);
+  }
+}
+
+function accountTitle(acc, index, total) {
+  const alias = acc.alias || acc.id;
+  const userName = normalizeUserName(acc.userName) || '未识别';
+  return `账号${index+1}/${total} ${alias}：${userName}`;
+}
+
+function accountDisplayName(acc) {
+  const alias = acc.alias || acc.id;
+  const userName = normalizeUserName(acc.userName);
+  return userName ? `${alias}：${userName}` : `${alias}：未识别`;
+}
+
+// ─── HTTP 请求（Surge: $httpClient）─────────────────────────────────────────
+function sanitizeHeaders(headers) {
+  const out = {};
+  Object.keys(headers || {}).forEach(k => {
+    const lk = k.toLowerCase();
+    if (lk === 'host' || lk === 'connection' || lk === 'proxy-connection' || lk === 'keep-alive' || lk === 'content-length') return;
+    if (lk.charAt(0) === ':') return;
+    out[k] = headers[k];
+  });
+  return out;
+}
+
+function surgeFetch(request) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      url: request.url,
+      headers: sanitizeHeaders(request.headers || {}),
+      timeout: 60
+    };
+    if (request.body) options.body = request.body;
+    const callback = (error, response, data) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve({
+        statusCode: response && (response.status || response.statusCode),
+        headers: response && response.headers,
+        body: data
+      });
+    };
+    if ((request.method || 'GET').toUpperCase() === 'POST') {
+      $httpClient.post(options, callback);
+    } else {
+      $httpClient.get(options, callback);
+    }
+  });
+}
+
+// ─── 单账号任务 ──────────────────────────────────────────────────────────────
 function runAccount(acc, index, total) {
-  const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
+  let oldUserName = normalizeUserName(acc.userName);
+  updateAccountUserNameFromCapture(acc);
+  const tag = accountTitle(acc, index, total);
   const ua = buildUA(acc.baseUA, acc.uaSeed);
   const headers = buildHeaders(acc.capture, ua);
   const fakeDeviceId = genFakeDeviceId();
   const msgs = [tag];
 
+  function refreshTag() {
+    msgs[0] = accountTitle(acc, index, total);
+  }
+
   function fetchApi(path, useFakeId) {
     const overrideId = useFakeId ? fakeDeviceId : null;
-    return httpGet(buildUrl(path, acc.capture, overrideId), headers);
+    const attempt = (n) => {
+      console.log(`【${scriptName}】${accountTitle(acc, index, total)} 请求 ${path}，第${n}次`);
+      return surgeFetch({ url: buildUrl(path, acc.capture, overrideId), method: 'GET', headers })
+      .then(res => {
+        console.log(`【${scriptName}】${accountTitle(acc, index, total)} 请求 ${path} 完成，状态码：${res.statusCode || '未知'}`);
+        return res;
+      })
+      .catch(err => {
+        const m = err && (err.error || err.message || String(err));
+        console.log(`【${scriptName}】${accountTitle(acc, index, total)} 请求 ${path} 失败：${m}`);
+        if (n < 3 && /SSL|SSLSessionState|timeout|timed out|reset|connection|network|stream closed|closed|EOF/i.test(m || '')) {
+          return sleep(1500).then(() => attempt(n + 1));
+        }
+        throw err;
+      });
+    };
+    return attempt(1);
   }
 
   function doVideoLoop(count) {
@@ -242,6 +451,7 @@ function runAccount(acc, index, total) {
     function next() {
       if (i >= count) return Promise.resolve();
       return new Promise(resolve => {
+        const delay = i === 0 ? randomDelay(1000, 2500) : randomDelay(VIDEO_DELAY_MIN, VIDEO_DELAY_MAX);
         setTimeout(() => {
           i++;
           fetchApi('videoBonus', true).then(res => {
@@ -250,6 +460,9 @@ function runAccount(acc, index, total) {
               if (d.retcode === 0) {
                 msgs.push(`🎬 视频${i}：+${d.result?.bonus || '?'} Coins`);
                 resolve(next());
+              } else if (isCaptchaResponse(d)) {
+                msgs.push(`🛑 视频${i}：触发验证码，停止该账号剩余请求（${d.retmsg}）`);
+                resolve();
               } else {
                 msgs.push(`⏸ 视频${i}：${d.retmsg}`);
                 resolve();
@@ -262,47 +475,74 @@ function runAccount(acc, index, total) {
             msgs.push(`❌ 视频${i}：${err.error || '请求失败'}`);
             resolve();
           });
-        }, i === 0 ? 1500 : VIDEO_DELAY);
+        }, delay);
       });
     }
     return next();
   }
 
   return fetchApi('queryBalanceAndBonus').then(res => {
+    let captchaHit = false;
     try {
       const d = JSON.parse(res.body);
+      oldUserName = normalizeUserName(acc.userName);
+      updateAccountUserName(acc, d);
+      logUserNameChange(acc, oldUserName, index, total, 'queryBalanceAndBonus');
+      refreshTag();
       if (d.retcode === 0) msgs.push(`💰 余额：${d.result.balance} Coins`);
-      else msgs.push(`⚠️ 查询：${d.retmsg}`);
+      else if (isCaptchaResponse(d)) {
+        msgs.push(`🛑 查询：触发验证码（${d.retmsg}），本账号本次跳过`);
+        captchaHit = true;
+      } else msgs.push(`⚠️ 查询：${d.retmsg}`);
     } catch (e) { msgs.push('❌ 查询：解析失败'); }
+    if (captchaHit) return Promise.reject({ skip: true });
     return fetchApi('checkIn');
   }).then(res => {
+    let captchaHit = false;
     try {
       const d = JSON.parse(res.body);
+      oldUserName = normalizeUserName(acc.userName);
+      updateAccountUserName(acc, d);
+      logUserNameChange(acc, oldUserName, index, total, 'checkIn');
+      refreshTag();
       if (d.retcode === 0) msgs.push(`✅ 签到：${(d.result?.bonusHint || d.retmsg || '').replace(/\n/g, ' ')}`);
-      else msgs.push(`⚠️ 签到：${d.retmsg}`);
+      else if (isCaptchaResponse(d)) {
+        msgs.push(`🛑 签到：触发验证码（${d.retmsg}），跳过视频环节`);
+        captchaHit = true;
+      } else msgs.push(`⚠️ 签到：${d.retmsg}`);
     } catch (e) { msgs.push('❌ 签到：解析失败'); }
+    if (captchaHit) return Promise.reject({ skip: true });
     return doVideoLoop(MAX_VIDEO);
   }).then(() => fetchApi('queryBalanceAndBonus')).then(res => {
     try {
       const d = JSON.parse(res.body);
+      oldUserName = normalizeUserName(acc.userName);
+      updateAccountUserName(acc, d);
+      logUserNameChange(acc, oldUserName, index, total, 'queryBalanceAndBonus');
+      refreshTag();
       if (d.retcode === 0) msgs.push(`💰 最新余额：${d.result.balance} Coins`);
     } catch (e) {}
     return msgs.join('\n');
   }).catch(err => {
-    msgs.push(`❌ 异常：${err.error || String(err)}`);
+    if (err && err.skip) return msgs.join('\n');
+    msgs.push(`❌ 异常：${err.error || err.message || String(err)}`);
     return msgs.join('\n');
   });
 }
 
-// --- 脚本入口 ---
-if ($trigger === 'http-request') {
-  // 抓包存储账号信息
+// ─── 主逻辑：抓包 or 定时任务 ────────────────────────────────────────────────
+if (typeof $request !== 'undefined' && $request) {
+  // ── 抓包模式 ──────────────────────────────────────────────────────────────
   const paramsRaw = parseRawQuery($request.url);
+
+  if (!isValidCapture($request.url, paramsRaw)) {
+    console.log(`【${scriptName}】忽略无关请求：${$request.url}`);
+    $done({});
+  } else {
+
   const headersMap = normalizeHeaderNameMap($request.headers || {});
   let baseUA = '';
-  Object.keys(headersMap).forEach(k => {
-    if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k];
-  });
+  Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
 
   const store = loadStore();
   const fp = fingerprintOf(paramsRaw);
@@ -310,10 +550,12 @@ if ($trigger === 'http-request') {
   const existed = !!store.accounts[fp];
   const uaSeed = existed ? store.accounts[fp].uaSeed : store.order.length;
   const alias = existed ? store.accounts[fp].alias : `账号${store.order.length + 1}`;
+  const userName = existed ? store.accounts[fp].userName : '';
 
   store.accounts[fp] = {
     id: fp,
     alias,
+    userName,
     uaSeed,
     baseUA,
     capture: { url: $request.url, paramsRaw, headers: headersMap },
@@ -324,15 +566,17 @@ if ($trigger === 'http-request') {
   saveStore(store);
 
   const total = store.order.length;
-  $notification.post(scriptName, existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${alias}（id:${fp}）\n当前账号总数：${total}`);
+  notify(existed ? '🔄 账号参数已更新' : '✅ 新账号已入库', `${accountDisplayName(store.accounts[fp])}（id:${fp}）\n当前账号总数：${total}`);
   console.log(`【${scriptName}】${existed ? 'update' : 'add'} account ${fp}\n${JSON.stringify(store.accounts[fp], null, 2)}`);
   $done({});
+  }
+
 } else {
-  // 定时任务：执行所有账号签到
+  // ── 定时任务模式 ──────────────────────────────────────────────────────────
   const store = loadStore();
   const ids = store.order.filter(id => store.accounts[id]);
   if (!ids.length) {
-    $notification.post(scriptName, '⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
+    notify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
     $done();
   } else {
     const total = ids.length;
@@ -340,14 +584,19 @@ if ($trigger === 'http-request') {
     let chain = Promise.resolve();
     ids.forEach((id, idx) => {
       chain = chain.then(() => runAccount(store.accounts[id], idx, total))
-        .then(text => { results.push(text); })
-        .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
+        .then(text => {
+          results.push(text);
+          saveStore(store);
+        })
+        .then(() => idx < ids.length - 1 ? sleep(randomDelay(ACCOUNT_GAP_MIN, ACCOUNT_GAP_MAX)) : null);
     });
     chain.then(() => {
-      $notification.post(scriptName, `🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
+      saveStore(store);
+      notify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n'));
       $done();
     }).catch(err => {
-      $notification.post(scriptName, '❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
+      saveStore(store);
+      notify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
       $done();
     });
   }
