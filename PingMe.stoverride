@@ -1,9 +1,9 @@
 name: |-
-  PingMe自动签到
+  Pingqme20
 desc: |-
-  local
+  Pingqme20
 icon: |-
-  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1069.png
+  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1061.png
 
 http:
 
@@ -12,19 +12,20 @@ http:
 
   script:
     - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
-      name: "PingMe获取签到参数_2"
+      name: "PingMe获取签到参数_1"
       type: request
       timeout: 60
 
 cron:
   script:
-    - name: "PingMe获取签到参数_2"
-      cron: 0 */1 * * *
+    - name: "PingMe签到_2"
+      cron: 0 * * * *
       timeout: 300
 
 script-providers:
-  "PingMe获取签到参数_2":
+  "PingMe获取签到参数_1":
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
     interval: 86400
-
-
+  "PingMe签到_2":
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
+    interval: 86400
