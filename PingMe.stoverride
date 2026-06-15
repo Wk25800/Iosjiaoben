@@ -24,7 +24,7 @@ cron:
 
 script-providers:
   "PingMe获取签到参数_2":
-    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/Surge.js
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
     interval: 86400
 
 
