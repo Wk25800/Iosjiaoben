@@ -12,17 +12,17 @@ http:
 
   script:
     - match: ^https:\/\/api\.wetalkapp\.net\/app\/queryBalanceAndBonus
-      name: "Wetalk签到"
+      name: "Wetalk签到1"
       type: request
       timeout: 60
 
 cron:
   script:
-    - name: "Wetalk签到"
+    - name: "Wetalk签到1"
       cron: 0 */1 * * *
       timeout: 300
 
 script-providers:
-  "Wetalk签到":
+  "Wetalk签到1":
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/wkstash.js
     interval: 86400
