@@ -247,7 +247,7 @@ function sleep(ms) {
 function fetchApi(url, headers, retry) {
   retry = (retry === undefined) ? 3 : retry;
   return new Promise((resolve, reject) => {
-    $httpClient.get({ url, headers, policy: '国内节点' }, (error, response, body) => {
+    $httpClient.get({ url, headers }, (error, response, body) => {
       if (error) {
         const m = String(error);
         if (retry > 0 && /SSL|timeout|timed out|reset|connection|network|stream closed|closed|EOF/i.test(m)) {
@@ -333,10 +333,7 @@ function runAccount(acc, index, total) {
 
 // ─── 入口 ──────────────────────────────────────────────────────────────────
 // 调试：记录进入了哪个分支
-const hasRequest = typeof $request !== 'undefined' && $request && $request.url;
-$notification.post('WeTalk调试', hasRequest ? '抓包模式' : '签到模式', `$request: ${hasRequest ? $request.url.slice(0, 50) : 'undefined'}`);
-
-if (hasRequest) {
+if (typeof $request !== 'undefined' && $request && $request.url) {
   // ── 抓包模式：存储账号 ──
   const paramsRaw = parseRawQuery($request.url);
   const headersMap = normalizeHeaderNameMap($request.headers || {});
