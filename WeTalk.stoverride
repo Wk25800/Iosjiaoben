@@ -21,6 +21,13 @@ cron:
     - name: "WeTalk_5"
       cron: 20 */3 * * *
       timeout: 120
+tiles:
+  - name: "WeTalk_5"
+    interval: 600
+    title: "WeTalk"
+    content: "WeTalk手签到"
+    icon: "checkmark.circle.fill"
+    backgroundColor: "#FF6B6B"
 
 script-providers:
   "WeTalk_5":
