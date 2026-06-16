@@ -8,7 +8,7 @@ icon: |-
 http:
 
   mitm:
-    - "api.wetalkapp.net"
+    - "api.wetalkapp.com"
 
   script:
     - match: ^https:\/\/api\.wetalkapp\.net\/app\/queryBalanceAndBonus
