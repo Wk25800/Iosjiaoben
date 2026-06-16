@@ -3,8 +3,6 @@
 @Name：WeTalk 自动化签到+视频奖励
 @Author：TG@ZenMoFiShi
 @Adapted for Stash by pp
-
-覆写配置见配套 YAML
 */
 
 const scriptName = 'WeTalk';
@@ -131,14 +129,6 @@ function emailKeyOf(paramsRaw) {
   return safeDecode(raw).trim().toLowerCase();
 }
 
-function fingerprintOf(paramsRaw) {
-  const email = emailKeyOf(paramsRaw);
-  if (email) return email;
-  const drop = { sign:1, signDate:1, timestamp:1, ts:1, nonce:1, random:1, reqTime:1, reqId:1, requestId:1 };
-  const base = Object.keys(paramsRaw || {}).filter(k => !drop[k]).sort().map(k => `${k}=${paramsRaw[k]}`).join('&');
-  return 'fp_' + MD5(base).slice(0, 12);
-}
-
 function migrateStore(store) {
   if (!store || !store.accounts) return store;
   const newAccounts = {}, newOrder = [];
@@ -159,7 +149,6 @@ function migrateStore(store) {
   return store;
 }
 
-// ─── 存储：$persistentStore（Stash / Surge / Loon 通用）─────────────────────
 function loadStore() {
   const raw = $persistentStore.read(storeKey);
   if (!raw) return { version: 2, accounts: {}, order: [] };
@@ -177,7 +166,6 @@ function saveStore(store) {
   $persistentStore.write(JSON.stringify(store), storeKey);
 }
 
-// ─── UA / 签名 ─────────────────────────────────────────────────────────────
 function pickItem(arr, seed) { return arr[seed % arr.length]; }
 
 function buildUA(baseUA, seed) {
@@ -248,7 +236,6 @@ function buildHeaders(capture, ua) {
   return headers;
 }
 
-// ─── 通知：$notification（Stash / Surge / Loon 通用）──────────────────────
 function notify(title, body) {
   $notification.post(scriptName, title, body);
 }
@@ -257,7 +244,6 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// ─── HTTP 请求：$httpClient（Stash / Surge / Loon 通用）───────────────────
 function fetchApi(url, headers, retry) {
   retry = (retry === undefined) ? 3 : retry;
   return new Promise((resolve, reject) => {
@@ -276,7 +262,6 @@ function fetchApi(url, headers, retry) {
   });
 }
 
-// ─── 核心逻辑 ──────────────────────────────────────────────────────────────
 function runAccount(acc, index, total) {
   const tag = `[账号${index+1}/${total} ${acc.alias || acc.email || acc.id}]`;
   const ua = buildUA(acc.baseUA, acc.uaSeed);
@@ -347,7 +332,11 @@ function runAccount(acc, index, total) {
 }
 
 // ─── 入口 ──────────────────────────────────────────────────────────────────
-if (typeof $request !== 'undefined' && $request) {
+// 调试：记录进入了哪个分支
+const hasRequest = typeof $request !== 'undefined' && $request && $request.url;
+$notification.post('WeTalk调试', hasRequest ? '抓包模式' : '签到模式', `$request: ${hasRequest ? $request.url.slice(0, 50) : 'undefined'}`);
+
+if (hasRequest) {
   // ── 抓包模式：存储账号 ──
   const paramsRaw = parseRawQuery($request.url);
   const headersMap = normalizeHeaderNameMap($request.headers || {});
