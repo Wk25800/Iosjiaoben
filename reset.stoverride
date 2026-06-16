@@ -1,0 +1,16 @@
+cron:
+  script:
+    - name: PingMe签到_2
+      cron: '0 * * * *'
+      timeout: 300
+    - name: PingMeReset        # ← 新加这一条
+      cron: '* * * * *'        # 临时改成每分钟跑一次
+      timeout: 10
+
+script-providers:
+  PingMe签到_2:
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/PingMe.js
+    interval: 86400
+  PingMeReset:                 # ← 新加这一条
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/Reset.js
+    interval: 0
