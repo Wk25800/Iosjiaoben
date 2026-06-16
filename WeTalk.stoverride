@@ -1,19 +1,21 @@
 http:
   mitm:
     - "api.wetalkapp.com"
+  force-http-engine:
+    - "api.wetalkapp.com:443"   # ← 必须是 域名:端口 格式
   script:
     - match: ^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus
       name: "WeTalk获取参数_1"
       type: request
       timeout: 60
-      script-provider: "WeTalk获取参数_1"   # ← 加这行
+      script-provider: "WeTalk获取参数_1"
 
 cron:
   script:
     - name: "WeTalk签到_2"
       cron: 20 8,20 * * *
       timeout: 120
-      script-provider: "WeTalk签到_2"        # ← 加这行
+      script-provider: "WeTalk签到_2"
 
 tiles:
   - name: "WeTalk签到_2"
