@@ -4,32 +4,30 @@ desc: |-
   WeTalk
 icon: |-
   https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1087.png
-
 http:
-
   mitm:
     - "api.wetalkapp.com"
-
   script:
     - match: ^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus
-      name: "WeTalk_5"
+      name: "WeTalk获取参数_1"
       type: request
       timeout: 60
-
 cron:
   script:
-    - name: "WeTalk_5"
-      cron: 20 */3 * * *
+    - name: "WeTalk签到_2"
+      cron: 20 8,20 * * *
       timeout: 120
 tiles:
-  - name: "WeTalk_5"
+  - name: "WeTalk签到_2"
     interval: 600
     title: "WeTalk"
     content: "WeTalk手签到"
     icon: "checkmark.circle.fill"
     backgroundColor: "#FF6B6B"
-
 script-providers:
-  "WeTalk_5":
+  "WeTalk获取参数_1":
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/WeTalk.js
+    interval: 86400
+  "WeTalk签到_2":
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/WeTalk.js
     interval: 86400
