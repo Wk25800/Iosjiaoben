@@ -1,0 +1,28 @@
+name: |-
+  WeTalk
+desc: |-
+  WeTalk
+icon: |-
+  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1087.png
+
+http:
+
+  mitm:
+    - "api.wetalkapp.com"
+
+  script:
+    - match: ^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus
+      name: "WeTalk_5"
+      type: request
+      timeout: 60
+
+cron:
+  script:
+    - name: "WeTalk_5"
+      cron: 20 */3 * * *
+      timeout: 120
+
+script-providers:
+  "WeTalk_5":
+    url: https://raw.githubusercontent.com/ZenmoFeiShi/Qx/refs/heads/main/WeTalk.js
+    interval: 86400
