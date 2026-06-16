@@ -9,7 +9,8 @@ http:
 
   mitm:
     - "api.pingmeapp.net"
-
+  force-http-engine:
+    - 'api.pingmeapp.net:443'
   script:
     - match: ^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus
       name: "PingMe获取签到参数_1"
