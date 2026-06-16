@@ -24,6 +24,7 @@ tiles:
     content: "WeTalk手签到"
     icon: "checkmark.circle.fill"
     backgroundColor: "#FF6B6B"
+    url: "script://WeTalk签到_2"
 script-providers:
   "WeTalk获取参数_1":
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/WeTalk.js
