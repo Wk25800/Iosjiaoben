@@ -4,15 +4,15 @@ mitm:
   hostname:
     - api.wetalkapp.com
 
-# ==================== HTTP 脚本（抓包用） ====================
+# ==================== 脚本匹配（抓包） ====================
 script:
   - match: ^https?://api\.wetalkapp\.com/app/queryBalanceAndBonus
-    name: WeTalk抓取
+    name: WeTalk
     type: request
     timeout: 60
     script-providers: WeTalk
 
-# ==================== Script Providers ====================
+# ==================== 脚本提供者 ====================
 script-providers:
   WeTalk:
     url: https://raw.githubusercontent.com/wk25800/refs/heads/main/WeTalk.js
@@ -20,15 +20,15 @@ script-providers:
     debug: false
     timeout: 30
 
-# ==================== Cron 定时任务 ====================
+# ==================== Cron 定时签到 ====================
 cron:
   script:
-    - name: WeTalk签到
+    - name: WeTalk
       cron: "20 8,20 * * *"
       timeout: 300
       script-providers: WeTalk
 
-# ==================== 可选快捷按钮 ====================
+# ==================== 快捷按钮（可选） ====================
 tiles:
   - name: "WeTalk签到"
     interval: 600
@@ -36,4 +36,3 @@ tiles:
     content: "点击签到"
     icon: "checkmark.circle.fill"
     backgroundColor: "#FF6B6B"
-  
