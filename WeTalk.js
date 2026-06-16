@@ -244,6 +244,7 @@ function buildHeaders(capture, ua) {
   });
   headers['User-Agent'] = ua;
   headers['Connection'] = 'close';
+  headers['Accept-Encoding'] = 'gzip, deflate';
   return headers;
 }
 
