@@ -11,7 +11,7 @@ http:
     - "api.wetalkapp.com"
 
   script:
-    - match: ^https:\/\/api\.wetalkapp\.net\/app\/queryBalanceAndBonus
+    - match: ^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus
       name: "Wetalk签到1"
       type: request
       timeout: 60
