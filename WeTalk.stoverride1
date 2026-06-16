@@ -1,0 +1,34 @@
+name: WeTalk 签到
+
+mitm:
+  hostname:
+    - api.wetalkapp.com
+
+script:
+  - match: ^https?://api\.wetalkapp\.com/app/queryBalanceAndBonus
+    name: WeTalk
+    type: request
+    timeout: 60
+    script-providers: WeTalk
+
+script-providers:
+  WeTalk:
+    url: https://raw.githubusercontent.com/wk25800/refs/heads/main/WeTalk.js
+    interval: 86400
+    debug: false
+    timeout: 30
+
+cron:
+  script:
+    - name: WeTalk
+      cron: "20 8,20 * * *"
+      timeout: 300
+      script-providers: WeTalk
+
+tiles:
+  - name: "WeTalk签到"
+    interval: 600
+    title: "WeTalk"
+    content: "点击签到"
+    icon: "checkmark.circle.fill"
+    backgroundColor: "#FF6B6B"
