@@ -247,7 +247,7 @@ function sleep(ms) {
 function fetchApi(url, headers, retry) {
   retry = (retry === undefined) ? 3 : retry;
   return new Promise((resolve, reject) => {
-    $httpClient.get({ url, headers }, (error, response, body) => {
+    $httpClient.get({ url, headers, policy: '国内节点' }, (error, response, body) => {
       if (error) {
         const m = String(error);
         if (retry > 0 && /SSL|timeout|timed out|reset|connection|network|stream closed|closed|EOF/i.test(m)) {
