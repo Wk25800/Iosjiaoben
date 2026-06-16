@@ -1,37 +1,44 @@
-name: WeTalk
-desc: WeTalk签到脚本
+name: WeTalk 签到
+
+mitm:
+  hostname:
+    - api.wetalkapp.com
 
 http:
-  mitm:
-    - "api.wetalkapp.com"
-  force-http-engine:
-    - "api.wetalkapp.com:443"
   script:
-    - match: ^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus
-      name: "WeTalk获取参数_1"
+    # 抓包用（触发保存账号参数）
+    - match: ^https?://api\.wetalkapp\.com/app/queryBalanceAndBonus
+      name: WeTalk抓取
       type: request
       timeout: 60
-      script-provider: "WeTalk获取参数_1"
+      script-providers: WeTalk
 
-cron:
-  script:
-    - name: "WeTalk签到_2"
-      cron: 20 8,20 * * *
-      timeout: 120
-      script-provider: "WeTalk签到_2"
+    # 签到任务（Cron 执行）
+    - match: WeTalk签到
+      name: WeTalk签到
+      type: cron
+      script-providers: WeTalk
+
+script-providers:
+  WeTalk:
+    url: https://raw.githubusercontent.com/wk25800/refs/heads/main/WeTalk.js   # ← 确认你的链接是否正确
+    interval: 86400
+    debug: false
+    timeout: 30
 
 tiles:
-  - name: "WeTalk签到_2"
+  - name: "WeTalk签到"
     interval: 600
     title: "WeTalk"
     content: "WeTalk手签到"
     icon: "checkmark.circle.fill"
     backgroundColor: "#FF6B6B"
 
-script-providers:
-  "WeTalk获取参数_1":
-    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/WeTalk.js
-    interval: 86400
-  "WeTalk签到_2":
-    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/WeTalk.js
-    interval: 86400
+cron:
+  script:
+    - name: WeTalk签到
+      cron: "20 8,20 * * *"
+      timeout: 300
+      script-providers: WeTalk
+
+
