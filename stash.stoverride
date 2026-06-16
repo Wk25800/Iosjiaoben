@@ -1,0 +1,28 @@
+name: |-
+  wetalk自动签到
+desc: |-
+  local
+icon: |-
+  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1100.png
+
+http:
+
+  mitm:
+    - "api.wetalkapp.net"
+
+  script:
+    - match: ^https:\/\/api\.wetalkapp\.net\/app\/queryBalanceAndBonus
+      name: "Wetalk签到"
+      type: request
+      timeout: 60
+
+cron:
+  script:
+    - name: "Wetalk签到"
+      cron: 0 */1 * * *
+      timeout: 300
+
+script-providers:
+  "Wetalk签到":
+    url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/WeTalk.js
+    interval: 86400
