@@ -1,8 +1,11 @@
+name: WeTalk
+desc: WeTalk签到脚本
+
 http:
   mitm:
     - "api.wetalkapp.com"
   force-http-engine:
-    - "api.wetalkapp.com:443"   # ← 必须是 域名:端口 格式
+    - "api.wetalkapp.com:443"
   script:
     - match: ^https:\/\/api\.wetalkapp\.com\/app\/queryBalanceAndBonus
       name: "WeTalk获取参数_1"
