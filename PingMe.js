@@ -388,7 +388,7 @@ function surgeFetch(request) {
   return new Promise((resolve, reject) => {
     const options = {
       url: request.url,
-      headers: sanitizeHeaders(request.headers || {}),
+      headers: request.headers || {},
       timeout: 60
     };
     if (request.body) options.body = request.body;
