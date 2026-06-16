@@ -1,9 +1,3 @@
-name: |-
-  WeTalk
-desc: |-
-  WeTalk
-icon: |-
-  https://github.com/Toperlock/Quantumult/raw/main/icon/Doraemon/Doraemon-1087.png
 http:
   mitm:
     - "api.wetalkapp.com"
@@ -12,11 +6,15 @@ http:
       name: "WeTalk获取参数_1"
       type: request
       timeout: 60
+      script-provider: "WeTalk获取参数_1"   # ← 加这行
+
 cron:
   script:
     - name: "WeTalk签到_2"
       cron: 20 8,20 * * *
       timeout: 120
+      script-provider: "WeTalk签到_2"        # ← 加这行
+
 tiles:
   - name: "WeTalk签到_2"
     interval: 600
@@ -24,6 +22,7 @@ tiles:
     content: "WeTalk手签到"
     icon: "checkmark.circle.fill"
     backgroundColor: "#FF6B6B"
+
 script-providers:
   "WeTalk获取参数_1":
     url: https://raw.githubusercontent.com/Wk25800/Iosjiaoben/refs/heads/main/WeTalk.js
